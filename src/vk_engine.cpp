@@ -188,7 +188,6 @@ void VulkanEngine::init_swapchain()
     create_swapchain(_windowExtent.width, _windowExtent.height);
 }
 
-// gives us a way to send commands to the gpu!
 void VulkanEngine::init_commands()
 {
 
