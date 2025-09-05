@@ -78,7 +78,31 @@ void VulkanEngine::cleanup()
 
 void VulkanEngine::draw()
 {
-    // nothing yet
+    // wait until the gpu has finished rendering the last frame. timeout of 1 second (in nanoseconds). after 1 second return vk timeout
+    VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
+    VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence)); // femces must be reset between uses
+
+    // request image index from the swapchain. if doesnt have any image we can use, block thread for 1 second. after 1 second return vk timeout
+    // we use index given from following funct to decide which swapchain images to use for drawing
+    uint32_t swapchainImageIndex;
+    VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex));
+
+    // copy command buffer handle from framedata (to shorten)
+    // vulkan handles only a 64 bit handle/pointer, fine to copy around
+
+    VkCommandBuffer cmdBuffer = get_current_frame()._mainCommandBuffer; 
+
+    // now that we are sure that the commands finished executing, can safely 
+    // reset the command buffer to begin recording again
+    VK_CHECK(vkResetCommandBuffer(cmdBuffer, 0));
+
+    // begin the command buffer recording. we will use this command buffer ONLY once (before resetting) again, so want to let vulkan know that (maybe gives small speedup)
+    VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+    // start the command buffer recording
+    VK_CHECK(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo));
+
+
 }
 
 void VulkanEngine::run()
@@ -224,6 +248,22 @@ void VulkanEngine::init_commands()
 
 void VulkanEngine::init_sync_structures()
 {
+    // create syncronization structures
+    // one fence to control when GPU has finished rendering the frame,
+    // and 2 semaphores to syncronize rendering with swapchain
+    // we want fence to start signalled so we can wait on it on the first frame
+    VkFenceCreateInfo fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT); // flag to wwit on freshly created fence without errors (for first frame)
+    VkSemaphoreCreateInfo semaphoreCreateInfo = vkinit::semaphore_create_info();
+
+    for (int i = 0; i < FRAME_OVERLAP; i++)
+    {
+        VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_frames[i]._renderFence));
+
+        VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._swapchainSemaphore));
+        VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._renderSemaphore));
+
+    }
+
 }
 
 void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)

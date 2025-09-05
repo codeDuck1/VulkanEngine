@@ -9,6 +9,11 @@ struct FrameData
 {
 	VkCommandPool _commandPool; // allocate cmd buffer with
 	VkCommandBuffer _mainCommandBuffer; // record cmds into
+
+	// syncronization structures
+	VkSemaphore _swapchainSemaphore, // render cmds wait on swapchain image request (gpu to gpu)
+		_renderSemaphore; // control presenting img to OS once drawing finishes
+	VkFence _renderFence; // wait for draw cmds of a given frame to be finished (cpu to gpu)
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -41,6 +46,7 @@ public:
 	// setting up vulkan cmds
 	FrameData _frames[FRAME_OVERLAP];
 	// flips between our 2 framedata structs
+	// even nums always 0, odd always 1 after mod 2
 	FrameData& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
 
 	VkQueue _graphicsQueue;
