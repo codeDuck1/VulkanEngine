@@ -35,4 +35,5 @@ void vkutil::transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout 
 	depInfo.imageMemoryBarrierCount = 1;
 	depInfo.pImageMemoryBarriers = &imageBarrier;
 
+	vkCmdPipelineBarrier2(cmd, &depInfo);
 }

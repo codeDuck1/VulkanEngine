@@ -11,8 +11,8 @@ struct FrameData
 	VkCommandBuffer _mainCommandBuffer; // record cmds into
 
 	// syncronization structures
-	VkSemaphore _swapchainSemaphore, // render cmds wait on swapchain image request (gpu to gpu)
-		_renderSemaphore; // control presenting img to OS once drawing finishes
+	VkSemaphore _swapchainSemaphore; // render cmds wait on swapchain image request (gpu to gpu)
+	VkSemaphore	_renderSemaphore; // control presenting img to OS once drawing finishes
 	VkFence _renderFence; // wait for draw cmds of a given frame to be finished (cpu to gpu)
 };
 
