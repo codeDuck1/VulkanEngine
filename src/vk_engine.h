@@ -12,7 +12,6 @@ struct FrameData
 
 	// syncronization structures
 	VkSemaphore _swapchainSemaphore; // render cmds wait on swapchain image request (gpu to gpu)
-	VkSemaphore	_renderSemaphore; // control presenting img to OS once drawing finishes
 	VkFence _renderFence; // wait for draw cmds of a given frame to be finished (cpu to gpu)
 };
 
@@ -42,6 +41,13 @@ public:
 	std::vector<VkImage> _swapchainImages; // actual image obj to use as texture or render into
 	std::vector<VkImageView> _swapChainImageViews;// wrapper for vkImage, allows for ex. swap color
 	VkExtent2D _swapchainExtent;
+
+	// control presenting img to OS once drawing finishes, one per swapchain image
+	// needs to be done per-image bc only when you acquire same image again do you know
+	// previous presentation of that image finished
+	// that is, when  present an image, you get nothing that tells you when presentation is done
+	// so dont know when to safe to reuse semaphore
+	std::vector<VkSemaphore> _submitSemaphores;
 
 	// setting up vulkan cmds
 	FrameData _frames[FRAME_OVERLAP];
