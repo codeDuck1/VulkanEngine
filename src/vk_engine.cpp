@@ -1,5 +1,11 @@
 ﻿//> includes
 #include "vk_engine.h"
+
+// define into only one .cpp file to store and compile the definitions
+// for VMA functions
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 #include "vk_images.h";
 
 #include <SDL.h>
@@ -77,6 +83,9 @@ void VulkanEngine::cleanup()
         }
         _submitSemaphores.clear(); 
 
+        // flush global deletion queue 
+        _mainDeletionQueue.flush();
+
 
 
         destroy_swapchain();
@@ -98,7 +107,11 @@ void VulkanEngine::draw()
 {
     // wait until the gpu has finished rendering the last frame. timeout of 1 second (in nanoseconds). after 1 second return vk timeout
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
-    VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence)); // femces must be reset between uses
+    VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence)); // fences must be reset between uses
+
+    // delete objects marked for deletion in previous frames
+    get_current_frame()._deletionQueue.flush();
+
 
     // request image index from the swapchain. if doesnt have any image we can use, block thread for 1 second. after 1 second return vk timeout
     // we use index given from following funct to decide which swapchain images to use for drawing
@@ -117,30 +130,30 @@ void VulkanEngine::draw()
     // begin the command buffer recording. we will use this command buffer ONLY once (before resetting) again, so want to let vulkan know that (maybe gives small speedup)
     VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-    // start the command buffer recording
+    _drawExtent.width = _drawImage.imageExtent.width;
+    _drawExtent.height = _drawImage.imageExtent.height;
+
+    // start command buffer recording
     VK_CHECK(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo));
 
-    // make swapchain image into writeable mode before rendering
+    // transition our main draw image into general layout so we can write into it
+    // we will overwrite it all so we dont care about what was the older layout
     // undefined bc we dont care abt data already in image, fine with gpu destroying. general allows read/write (not most optimal)
-    vkutil::transition_image(cmdBuffer, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkutil::transition_image(cmdBuffer, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-    // make a clear-color from frame number. this will flash with a 120 frame period.
-    VkClearColorValue clearValue;
-    float flash = std::abs(std::sin(_frameNumber / 120.f));
-    clearValue = { {0.0f, 0.0f, flash, 1.0f} };
+    draw_background(cmdBuffer);
 
-    // allows us to target part of image with barrier
-    VkImageSubresourceRange clearRange = vkinit::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+    //transition the draw image and the swapchain image into their correct transfer layouts
+    vkutil::transition_image(cmdBuffer, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    vkutil::transition_image(cmdBuffer, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-    // clear image
-    // ssubresource range for which part of image to clear
-    vkCmdClearColorImage(cmdBuffer, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange); 
+    // execute a copy from the draw image into the swapchain
+    vkutil::copy_image_to_image(cmdBuffer, _drawImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
 
-    // make swapchain image into presentable mode. last param is only img layout swapchain allows for present to screen
-    // // Q: what is present again?
-    vkutil::transition_image(cmdBuffer, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    // set swapchain image layout to Present so we can show it on the screen. last param is only img layout swapchain allows for present to screen
+    vkutil::transition_image(cmdBuffer, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
-    // finalize the command buffer (can no longer add commands, but it can now be executed!)
+    //finalize the command buffer (we can no longer add commands, but it can now be executed)
     VK_CHECK(vkEndCommandBuffer(cmdBuffer));
 
 
@@ -185,8 +198,21 @@ void VulkanEngine::draw()
     // increase the number of frames drawn
     _frameNumber++;
 
+}
 
+void VulkanEngine::draw_background(VkCommandBuffer cmd)
+{
+    // make a clear-color from frame number. this will flash with a 120 frame period.
+    VkClearColorValue clearValue;
+    float flash = std::abs(std::sin(_frameNumber / 120.f));
+    clearValue = { {0.0f, 0.0f, flash, 1.0f} };
 
+    // allows us to target part of image with barrier
+    VkImageSubresourceRange clearRange = vkinit::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+
+    // clear image
+    // ssubresource range for which part of image to clear
+    vkCmdClearColorImage(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
 }
 
 void VulkanEngine::run()
@@ -291,11 +317,73 @@ void VulkanEngine::init_vulkan()
     _graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value(); // graphics queues can do everything others can
     _graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
 
+    // initialize the memory allocator using vma lib
+    VmaAllocatorCreateInfo allocatorInfo = {};
+    allocatorInfo.physicalDevice = _chosenGPU;
+    allocatorInfo.device = _device;
+    allocatorInfo.instance = _instance;
+    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT; // lets us use gpu ptrs later when need them
+    vmaCreateAllocator(&allocatorInfo, &_allocator);
+
+    _mainDeletionQueue.push_function([&]()
+        {
+            vmaDestroyAllocator(_allocator);
+        });
 }
 
 void VulkanEngine::init_swapchain()
 {
     create_swapchain(_windowExtent.width, _windowExtent.height);
+
+    // draw image szie will match the window
+    VkExtent3D drawImageExtent = {
+        _windowExtent.width,
+        _windowExtent.height,
+        1
+    };
+
+    // hardcoding the draw format to 16 bit float (different from integer format like 24 bit color)
+    // 64 bits per pixel. 2x data of 32 bit rgba
+    _drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    _drawImage.imageExtent = drawImageExtent;
+
+    // in vulkan, all images and buffers must fill a usageflags with what they will be used for
+    // so drivers can do optimizations
+    VkImageUsageFlags drawImageUsages{};
+    // copy from and into the image
+    drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT; 
+    drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // computer shader writeable layout
+    drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+    // use graphics pipelines to draw gemoetry into image
+    drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    VkImageCreateInfo rimg_info = vkinit::image_create_info(_drawImage.imageFormat, drawImageUsages, drawImageExtent);
+
+    //for the draw image, we want to allocate it from gpu local memory
+    VmaAllocationCreateInfo rimg_allocinfo = {};
+    // flags to setup:
+    // gpu texture that wont ever be accessed from cpu, letting us put into gpu vram. 
+    rimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY; // allocate image on vram, but outside of upload heap
+    rimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // a flag only gpu vram has, guarantees fastest access
+
+    // allocate and create the image
+    vmaCreateImage(_allocator, &rimg_info, &rimg_allocinfo, &_drawImage.image, &_drawImage.allocation, nullptr);
+
+    //build a image-view for the draw image to use for rendering
+    // in vulkan need image view to accesss images. generally thin wrapper
+    // over img that lets do thing like limit access to only 1 mipmap
+    VkImageViewCreateInfo rview_info = vkinit::imageview_create_info(_drawImage.imageFormat, _drawImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    VK_CHECK(vkCreateImageView(_device, &rview_info, nullptr, &_drawImage.imageView));
+
+    //add to deletion queues
+    _mainDeletionQueue.push_function([=]() {
+        vkDestroyImageView(_device, _drawImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
+        });
+
+
 }
 
 void VulkanEngine::init_commands()

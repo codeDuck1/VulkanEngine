@@ -13,6 +13,9 @@ struct FrameData
 	// syncronization structures
 	VkSemaphore _swapchainSemaphore; // render cmds wait on swapchain image request (gpu to gpu)
 	VkFence _renderFence; // wait for draw cmds of a given frame to be finished (cpu to gpu)
+
+	// delete objects next frame after used
+	DeletionQueue _deletionQueue;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -58,6 +61,16 @@ public:
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
 
+	// for global objects
+	DeletionQueue _mainDeletionQueue;
+
+	VmaAllocator _allocator;
+
+	// draw resources
+	AllocatedImage _drawImage;
+	VkExtent2D _drawExtent;
+
+
 	static VulkanEngine& Get();
 
 	//initializes everything in the engine
@@ -67,7 +80,11 @@ public:
 	void cleanup();
 
 	//draw loop
+	// sync, command buffer managaement, and transitions
 	void draw();
+
+	// draw commands themselves
+	void draw_background(VkCommandBuffer cmd);
 
 	//run main loop
 	void run();

@@ -29,3 +29,34 @@
             abort();                                                    \
         }                                                               \
     } while (0)
+
+// better way at scale would be to store arrays of vulkan handles
+// of various types and delete from loop
+struct DeletionQueue
+{
+	std::deque<std::function<void()>> deletors;
+
+	void push_function(std::function<void()>&& function)
+	{
+		deletors.push_back(function);
+	}
+
+	void flush()
+	{
+		// reverse iterate deletion queue to execute all the functions
+		for (auto it = deletors.rbegin(); it != deletors.rend(); it++)
+		{
+			(*it)(); // call functors?
+		}
+		deletors.clear();
+	}
+};
+
+// holds data needed for an image
+struct AllocatedImage {
+    VkImage image;
+    VkImageView imageView;
+    VmaAllocation allocation;
+    VkExtent3D imageExtent;
+    VkFormat imageFormat;
+};
