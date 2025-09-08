@@ -79,6 +79,10 @@ public:
 	// descriptor layout for above set, need for creating pipeline
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
 
+	// pipelines
+	VkPipeline _gradientPipeline;
+	VkPipelineLayout _gradientPipelineLayout;
+
 
 	static VulkanEngine& Get();
 
@@ -108,5 +112,8 @@ private:
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
 	void init_descriptors();
+	
+	void init_pipelines();
+	void init_background_pipelines();
 
 };

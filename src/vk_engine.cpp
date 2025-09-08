@@ -5,7 +5,6 @@
 // for VMA functions
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
-
 #include "vk_images.h";
 
 #include <SDL.h>
@@ -14,6 +13,7 @@
 #include <vk_initializers.h>
 #include <vk_types.h>
 #include <VkBootstrap.h>
+#include <vk_pipelines.h>
 
 #include <chrono>
 #include <thread>
@@ -53,6 +53,7 @@ void VulkanEngine::init()
     init_commands();
     init_sync_structures();
     init_descriptors();
+    init_pipelines();
 
     // everything went fine
     _isInitialized = true;
@@ -211,9 +212,23 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
     // allows us to target part of image with barrier
     VkImageSubresourceRange clearRange = vkinit::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
 
-    // clear image
-    // ssubresource range for which part of image to clear
-    vkCmdClearColorImage(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+    //// clear image
+    //// ssubresource range for which part of image to clear
+    //vkCmdClearColorImage(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+
+    // computer shader invocation
+    // bind the gradient drawing compute pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipeline);
+
+    // bind the descriptor set containing the draw image so the shader can access it
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_drawImageDescriptors, 0, nullptr);
+
+    // execute the compute pipeline dispatch. we are using 16x16 workgroup size so we need to divide by it
+    //ex. if 1920x1080 pixels then get 8,160 (120x68) (width x height) workgroups each working on a 256(16x16) tile of pixels/threads
+    // total shader invocations (one thread executing shader code once) = 120x68x256 = 2,088,960. some extra threads that typically return early,
+    //  bc processing pixels that dont exist
+    // IN THIS CASE WE HAVE 1 THREAD PER PIXEL BUT THIS IS NOT ALWAYS THE CASE!
+    vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 16.0), std::ceil(_drawExtent.height / 16.0), 1);
 }
 
 void VulkanEngine::run()
@@ -441,8 +456,6 @@ void VulkanEngine::init_sync_structures()
 
 void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)
 {
-
-    
     vkb::SwapchainBuilder swapchainBuilder{ _chosenGPU, _device, _surface };
 
     _swapchainImageFormat = VK_FORMAT_B8G8R8A8_UNORM;
@@ -530,6 +543,52 @@ void VulkanEngine::init_descriptors()
         globalDescriptorAllocator.destroy_pool(_device);
 
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
+        });
+}
+
+void VulkanEngine::init_pipelines()
+{
+    init_background_pipelines();
+}
+
+void VulkanEngine::init_background_pipelines()
+{
+    // create pipeline layout
+    VkPipelineLayoutCreateInfo computeLayout{};
+    computeLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    computeLayout.pNext = nullptr;
+    computeLayout.pSetLayouts = &_drawImageDescriptorLayout;
+    computeLayout.setLayoutCount = 1;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_gradientPipelineLayout));
+
+    // create pipeline object itself, loading shader module and adding it to pipelineCreateInfo
+    VkShaderModule computeDrawShader;
+    if (!vkutil::load_shader_module("../../shaders/gradient.comp.spv", _device, &computeDrawShader))
+    {
+        fmt::print("Error when building the compute shader \n");
+    }
+
+    VkPipelineShaderStageCreateInfo stageinfo{};
+    stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageinfo.pNext = nullptr;
+    stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageinfo.module = computeDrawShader;
+    stageinfo.pName = "main"; // name of the function we want the shader to use
+
+    VkComputePipelineCreateInfo computePipelineCreateInfo{};
+    computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    computePipelineCreateInfo.pNext = nullptr;
+    computePipelineCreateInfo.layout = _gradientPipelineLayout;
+    computePipelineCreateInfo.stage = stageinfo;
+
+    VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &_gradientPipeline));
+
+    // cleanup
+    vkDestroyShaderModule(_device, computeDrawShader, nullptr); // can destroy directly, after creating pipeline dont need
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipelineLayout(_device, _gradientPipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _gradientPipeline, nullptr);
         });
 }
 
