@@ -1,7 +1,13 @@
+// GLSL version to use
 #version 460
 
+// size of a workgroup for compute 16x16 area = 256 pixels
 layout (local_size_x = 16, local_size_y = 16) in;
 
+// descriptor bindings for the pipeline
+// shader input through descriptor sets
+// this image belongs to descriptor set 0, and within descriptor set 0 this image is at
+// binding slot 1
 layout(rgba16f,set = 0, binding = 0) uniform image2D image;
 
 

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vk_types.h>
+#include <vk_descriptors.h>
 
 struct FrameData
 {
@@ -70,6 +71,14 @@ public:
 	AllocatedImage _drawImage;
 	VkExtent2D _drawExtent;
 
+	// descriptors
+	DescriptorAllocator globalDescriptorAllocator;
+
+	// descriptor set will bind our render image
+	VkDescriptorSet _drawImageDescriptors;
+	// descriptor layout for above set, need for creating pipeline
+	VkDescriptorSetLayout _drawImageDescriptorLayout;
+
 
 	static VulkanEngine& Get();
 
@@ -98,5 +107,6 @@ private:
 
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
+	void init_descriptors();
 
 };
