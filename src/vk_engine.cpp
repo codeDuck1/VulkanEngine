@@ -151,6 +151,12 @@ void VulkanEngine::draw()
 
     draw_background(cmdBuffer);
 
+
+    // transition the draw image and the swapchain image into their correct transfer layouts
+    // We are copying FROM our draw image INTO our swapchain image
+    vkutil::transition_image(cmdBuffer, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL); // copying FROM draw image
+    vkutil::transition_image(cmdBuffer, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL); // copying TO swapchain image
+
     // execute a copy from the draw image into the swapchain
      vkutil::copy_image_to_image(cmdBuffer, _drawImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
 
@@ -253,13 +259,6 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
 
 void VulkanEngine::run()
 {
-
-
-
-
-
-
-
     SDL_Event e;
     bool bQuit = false;
 
