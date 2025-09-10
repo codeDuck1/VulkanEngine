@@ -82,7 +82,15 @@ public:
 	// pipelines
 	VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
-
+	
+	// immediate gpu submit structures
+	VkFence _immFence;
+	VkCommandBuffer _immCommandBuffer;
+	VkCommandPool _immCommandPool;
+	
+	// for data uploads and other instant operations outside of render loop
+	// could improve would be to run it on different queue to overlap execution
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 
 	static VulkanEngine& Get();
 
@@ -95,6 +103,9 @@ public:
 	//draw loop
 	// sync, command buffer managaement, and transitions
 	void draw();
+
+	// render imgui
+	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 
 	// draw commands themselves
 	void draw_background(VkCommandBuffer cmd);
@@ -115,5 +126,7 @@ private:
 	
 	void init_pipelines();
 	void init_background_pipelines();
+
+	void init_imgui();
 
 };

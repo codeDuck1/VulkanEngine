@@ -123,6 +123,7 @@ VkPresentInfoKHR vkinit::present_info()
 }
 
 //> color_info
+// clear value optional pointer, can either clear or skip and load image
 VkRenderingAttachmentInfo vkinit::attachment_info(
     VkImageView view, VkClearValue* clear ,VkImageLayout layout /*= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL*/)
 {
@@ -132,7 +133,9 @@ VkRenderingAttachmentInfo vkinit::attachment_info(
 
     colorAttachment.imageView = view;
     colorAttachment.imageLayout = layout;
+    // load will keep image in memory, whereas clear will clear at start
     colorAttachment.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+    // save draw commands
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     if (clear) {
         colorAttachment.clearValue = *clear;
