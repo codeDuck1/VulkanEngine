@@ -108,8 +108,13 @@ public:
 	VkCommandBuffer _immCommandBuffer;
 	VkCommandPool _immCommandPool;
 
+	// for imgui selection
 	std::vector<ComputeEffect> backgroundEffects;
 	int currentBackgroundEffect{ 0 };
+
+
+	VkPipelineLayout _trianglePipelineLayout;
+	VkPipeline _trianglePipeline;
 	
 	// for data uploads and other instant operations outside of render loop
 	// could improve would be to run it on different queue to overlap execution
@@ -133,6 +138,8 @@ public:
 	// draw commands themselves
 	void draw_background(VkCommandBuffer cmd);
 
+	void draw_geometry(VkCommandBuffer cmd);
+
 	//run main loop
 	void run();
 
@@ -151,5 +158,7 @@ private:
 	void init_background_pipelines();
 
 	void init_imgui();
+
+	void init_triangle_pipeline();
 
 };

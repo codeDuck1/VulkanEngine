@@ -1,6 +1,6 @@
 ﻿# CMakeList.txt : CMake project for vulkan_guide, include source and define
 # project specific logic here.
-#
+# COMMAND TO REBUILD THIS: cmake --build . --target Shaders
 cmake_minimum_required (VERSION 3.8)
 
 project ("vulkan_guide")
@@ -26,6 +26,8 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${PROJECT_SOURCE_DIR}/shaders/*.comp"
     )
 
+    message(STATUS "Found shader files: ${GLSL_SOURCE_FILES}")
+
 foreach(GLSL ${GLSL_SOURCE_FILES})
   message(STATUS "BUILDING SHADER")
   get_filename_component(FILE_NAME ${GLSL} NAME)
@@ -42,3 +44,4 @@ add_custom_target(
     Shaders 
     DEPENDS ${SPIRV_BINARY_FILES}
     )
+
