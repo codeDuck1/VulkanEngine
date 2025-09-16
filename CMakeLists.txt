@@ -41,7 +41,7 @@ foreach(GLSL ${GLSL_SOURCE_FILES})
 endforeach(GLSL)
 
 add_custom_target(
-    Shaders 
+    Shaders ALL # Added ALL to make it build with main project
     DEPENDS ${SPIRV_BINARY_FILES}
     )
 

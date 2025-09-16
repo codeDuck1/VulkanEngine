@@ -60,3 +60,37 @@ struct AllocatedImage {
     VkExtent3D imageExtent;
     VkFormat imageFormat;
 };
+
+// used to hold data for buffer
+struct AllocatedBuffer
+{
+	VkBuffer buffer; // vulkan handle
+	// metadata abt buffer and its alloc, for freeing buffer
+	VmaAllocation allocation;
+	VmaAllocationInfo info;
+};
+
+// important to compact data as much as possible for vertex, will do later.
+// interleaved to match shader version
+struct Vertex {
+
+	glm::vec3 position;
+	float uv_x;
+	glm::vec3 normal;
+	float uv_y;
+	glm::vec4 color;
+};
+
+// holds the resources needed for a mesh
+struct GPUMeshBuffers {
+
+	AllocatedBuffer indexBuffer;
+	AllocatedBuffer vertexBuffer;
+	VkDeviceAddress vertexBufferAddress;
+};
+
+// push constants for drawing the mesh
+struct GPUDrawPushConstants {
+	glm::mat4 worldMatrix;
+	VkDeviceAddress vertexBuffer;
+};
