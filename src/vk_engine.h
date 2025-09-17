@@ -5,6 +5,7 @@
 
 #include <vk_types.h>
 #include <vk_descriptors.h>
+#include <vk_loader.h>
 
 struct FrameData
 {
@@ -89,6 +90,7 @@ public:
 
 	// draw resources
 	AllocatedImage _drawImage;
+	AllocatedImage _depthImage;
 	VkExtent2D _drawExtent;
 
 	// descriptors
@@ -118,6 +120,9 @@ public:
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
 	GPUMeshBuffers rectangle;
+
+	// meshes!
+	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 	
 	// for data uploads and other instant operations outside of render loop
 	// could improve would be to run it on different queue to overlap execution
@@ -142,6 +147,7 @@ public:
 	void draw_background(VkCommandBuffer cmd);
 
 	void draw_geometry(VkCommandBuffer cmd);
+	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
 	//run main loop
 	void run();
@@ -158,7 +164,7 @@ private:
 
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	void destroy_buffer(const AllocatedBuffer& buffer);
-	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+	
 
 	void init_descriptors();
 	void init_pipelines();

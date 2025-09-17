@@ -133,7 +133,7 @@ VkRenderingAttachmentInfo vkinit::attachment_info(
 
     colorAttachment.imageView = view;
     colorAttachment.imageLayout = layout;
-    // load will keep image in memory, whereas clear will clear at start
+    // load will keep image in memory drawing ontop, whereas clear will clear every frame
     colorAttachment.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
     // save draw commands
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -156,7 +156,7 @@ VkRenderingAttachmentInfo vkinit::depth_attachment_info(
     depthAttachment.imageLayout = layout;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.clearValue.depthStencil.depth = 0.f;
+    depthAttachment.clearValue.depthStencil.depth = 0.f; // using setup with depth 0 as far value. 1 as near
 
     return depthAttachment;
 }
