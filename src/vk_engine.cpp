@@ -65,6 +65,14 @@ void VulkanEngine::init()
 
     // everything went fine
     _isInitialized = true;
+
+    // camera init vals
+    mainCamera.velocity = glm::vec3(0.f);
+    mainCamera.position = glm::vec3(0, 0, 5);
+    mainCamera.pitch = 0;
+    mainCamera.yaw = 0;
+    _lastTime = SDL_GetTicks64();  
+    _deltaTime = 0.0f;        
 }
 
 /// <summary>
@@ -323,8 +331,10 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     GPUDrawPushConstants push_constants;
+
+    mainCamera.update(_deltaTime);
     // draw monkey
-    glm::mat4 view = glm::translate(glm::vec3{ 0,0,-5 });
+    glm::mat4 view = mainCamera.getViewMatrix();
     // camera projection
     glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
 
@@ -348,6 +358,7 @@ void VulkanEngine::run()
 
     // main loop
     while (!bQuit) {
+        updateDeltaTime();
         // Handle events on queue
         while (SDL_PollEvent(&e) != 0) {
             // close the window when user alt-f4s or clicks the X button
@@ -370,6 +381,8 @@ void VulkanEngine::run()
                     stop_rendering = false;
                 }
             }
+
+            mainCamera.processSDLEvent(e);
             // send SDL event to imgui for handling
             ImGui_ImplSDL2_ProcessEvent(&e);
         }
@@ -417,6 +430,13 @@ void VulkanEngine::run()
 
         draw();
     }
+}
+
+void VulkanEngine::updateDeltaTime()
+{
+    uint32_t currentTime = SDL_GetTicks64();
+    _deltaTime = (currentTime - _lastTime) / 1000.0f; // Convert to seconds
+    _lastTime = currentTime;
 }
 
 void VulkanEngine::init_vulkan()

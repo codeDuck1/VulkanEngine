@@ -6,6 +6,8 @@
 #include <vk_types.h>
 #include <vk_descriptors.h>
 #include <vk_loader.h>
+#include <camera.h>
+
 
 struct FrameData
 {
@@ -123,6 +125,8 @@ public:
 
 	// meshes!
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
+
+	Camera mainCamera;
 	
 	// for data uploads and other instant operations outside of render loop
 	// could improve would be to run it on different queue to overlap execution
@@ -151,6 +155,11 @@ public:
 
 	//run main loop
 	void run();
+
+	
+	uint32_t _lastTime{ 0 };
+	float _deltaTime{ 0.0f };
+	void updateDeltaTime();
 
 private:
 	void init_vulkan();
