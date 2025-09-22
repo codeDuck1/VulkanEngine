@@ -56,6 +56,7 @@ public:
 	int _frameNumber {0};
 	bool stop_rendering{ false };
 	VkExtent2D _windowExtent{ 1700 , 900 };
+	bool resize_requested{ false };
 
 	struct SDL_Window* _window{ nullptr };
 
@@ -66,6 +67,9 @@ public:
 	std::vector<VkImage> _swapchainImages; // actual image obj to use as texture or render into
 	std::vector<VkImageView> _swapChainImageViews;// wrapper for vkImage, allows for ex. swap color
 	VkExtent2D _swapchainExtent;
+
+	// for dynamic resolution
+	float renderScale = 1.f;
 
 	// control presenting img to OS once drawing finishes, one per swapchain image
 	// needs to be done per-image bc only when you acquire same image again do you know
@@ -157,6 +161,7 @@ private:
 
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
+	void resize_swapchain();
 
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	void destroy_buffer(const AllocatedBuffer& buffer);

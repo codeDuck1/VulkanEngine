@@ -38,7 +38,7 @@ void VulkanEngine::init()
     // We initialize SDL and create a window with it.
     SDL_Init(SDL_INIT_VIDEO);
 
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
     _window = SDL_CreateWindow(
         "Vulkan Engine",
@@ -132,7 +132,13 @@ void VulkanEngine::draw()
     // request image index from the swapchain. if doesnt have any image we can use, block thread for 1 second. after 1 second return vk timeout
     // we use index given from following funct to decide which swapchain images to use for drawing
     uint32_t swapchainImageIndex;
-    VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex));
+    // stop rendering if resize on window requested
+    VkResult e = vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex);
+    if (e == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        resize_requested = true;
+        return;
+    }
 
     // copy command buffer handle from framedata (to shorten)
     // vulkan handles only a 64 bit handle/pointer, fine to copy around
@@ -146,8 +152,10 @@ void VulkanEngine::draw()
     // begin the command buffer recording. we will use this command buffer ONLY once (before resetting) again, so want to let vulkan know that (maybe gives small speedup)
     VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-    _drawExtent.width = _drawImage.imageExtent.width;
-    _drawExtent.height = _drawImage.imageExtent.height;
+    // render scale mult is for dynamic resolution
+    // without it, we still support making window larger with taking min
+    _drawExtent.height = std::min(_swapchainExtent.height, _drawImage.imageExtent.height) * renderScale;
+    _drawExtent.width = std::min(_swapchainExtent.width, _drawImage.imageExtent.width) * renderScale;
 
     // start command buffer recording
     VK_CHECK(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo));
@@ -223,7 +231,11 @@ void VulkanEngine::draw()
 
     presentInfo.pImageIndices = &swapchainImageIndex;
 
-    VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
+    VkResult presentResult = vkQueuePresentKHR(_graphicsQueue, &presentInfo);
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        resize_requested = true;
+    }
 
     // increase the number of frames drawn
     _frameNumber++;
@@ -363,10 +375,17 @@ void VulkanEngine::run()
         }
 
         // do not draw if we are minimized
-        if (stop_rendering) {
+        if (stop_rendering)
+        {
             // throttle the speed to avoid the endless spinning
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
+        }
+
+        // check if resize was requested in draw loop
+        if (resize_requested)
+        {
+            resize_swapchain();
         }
 
         // imgui new frame
@@ -376,8 +395,9 @@ void VulkanEngine::run()
 
         if (ImGui::Begin("background")) {
 
-            ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
+            ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
 
+            ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
             ImGui::Text("Selected effect: ", selected.name);
 
             // for edits on compute shaders
@@ -652,6 +672,13 @@ void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)
 
 void VulkanEngine::destroy_swapchain()
 {
+    // destroy submit semaphores that are created in create swapchain,
+    // since new swapchain created when resizing
+    for (size_t i = 0; i < _submitSemaphores.size(); i++) {
+        vkDestroySemaphore(_device, _submitSemaphores[i], nullptr);
+    }
+    _submitSemaphores.clear();
+
     // deletes images it holds as well as they are owned by swapchain
     vkDestroySwapchainKHR(_device, _swapchain, nullptr);
     
@@ -660,6 +687,25 @@ void VulkanEngine::destroy_swapchain()
     {
         vkDestroyImageView(_device, _swapChainImageViews[i], nullptr);
     }
+}
+
+// for window resizing
+void VulkanEngine::resize_swapchain()
+{
+    vkDeviceWaitIdle(_device); // wait until gpu has finished all rendering commands
+
+    // destroy swapchain, query window size from SDL then create swapchain
+    // with new size
+    destroy_swapchain();
+
+    int w, h;
+    SDL_GetWindowSize(_window, &w, &h);
+    _windowExtent.width = w;
+    _windowExtent.height = h;
+
+    create_swapchain(_windowExtent.width, _windowExtent.height);
+
+    resize_requested = false;
 }
 
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
