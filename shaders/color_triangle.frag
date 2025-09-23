@@ -21,11 +21,12 @@ float roughness = 0.1;
 // No ambient occlusion for now (fully exposed surface)
 float ao = 1.0;
 
+// must match in sphere positions in world space
 vec3 lightPositions[4] = vec3[4](
-    vec3(-10.0, 10.0, 10.0),   // Upper left
-    vec3(10.0, 10.0, 10.0),    // Upper right  
-    vec3(-10.0, -10.0, 10.0),  // Lower left
-    vec3(10.0, -10.0, 10.0)    // Lower right
+    vec3(-3.0, 3.0, 3.0),   // Upper left
+    vec3(3.0, 3.0, 3.0),    // Upper right  
+    vec3(-3.0, -3.0, 3.0),  // Lower left
+    vec3(3.0, -3.0, 3.0)    // Lower right
 );
 vec3 lightColors[4] = vec3[4](
     vec3(300.0, 300.0, 300.0),    // White light

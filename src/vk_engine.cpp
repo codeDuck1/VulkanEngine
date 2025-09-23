@@ -348,6 +348,33 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     vkCmdBindIndexBuffer(cmd, testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
 
+
+    // Draw light spheres
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipeline);
+    // Light positions same as hardcoded in frag shader
+    // for pbr calculations on monkey
+    glm::vec3 lightPositions[4] = {
+        glm::vec3(-3.0f, 3.0f, 3.0f),   
+        glm::vec3(3.0f, 3.0f, 3.0f),
+        glm::vec3(-3.0f, -3.0f, 3.0f),
+        glm::vec3(3.0f, -3.0f, 3.0f)
+    };
+
+    // draw sphere at each light position
+    for (int i = 0; i < 4; i++)
+    {
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), lightPositions[i]);
+        model = glm::scale(model, glm::vec3(0.3f)); 
+
+        push_constants.worldMatrix = projection * view * model;
+        push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
+        push_constants.vertexBuffer = testMeshes[1]->meshBuffers.vertexBufferAddress; // sphere mesh at index 1. buffer memory contains multiple meshes
+
+        vkCmdPushConstants(cmd, _spherePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+        vkCmdBindIndexBuffer(cmd, testMeshes[1]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, testMeshes[1]->surfaces[0].count, 1, testMeshes[1]->surfaces[0].startIndex, 0, 0);
+    }
+
     vkCmdEndRendering(cmd);
 
 }
@@ -867,6 +894,7 @@ void VulkanEngine::init_pipelines()
     // COMPUTE PIPELINES
     init_background_pipelines();
     init_mesh_pipeline();
+    init_sphere_pipeline();
 }
 
 void VulkanEngine::init_background_pipelines()
@@ -1024,6 +1052,68 @@ void VulkanEngine::init_mesh_pipeline()
 
 void VulkanEngine::init_sphere_pipeline()
 {
+    VkShaderModule triangleFragShader;
+    if (!vkutil::load_shader_module("../../shaders/sphere.frag.spv", _device, &triangleFragShader)) {
+        fmt::print("Error when building the triangle fragment shader module");
+    }
+    else {
+        fmt::print("Triangle fragment shader succesfully loaded");
+    }
+
+    VkShaderModule triangleVertexShader;
+    if (!vkutil::load_shader_module("../../shaders/sphere.vert.spv", _device, &triangleVertexShader)) {
+        fmt::print("Error when building the triangle vertex shader module");
+    }
+    else {
+        fmt::print("Triangle vertex shader succesfully loaded");
+    }
+
+    VkPushConstantRange bufferRange{};
+    bufferRange.offset = 0;
+    bufferRange.size = sizeof(GPUDrawPushConstants); // new for mesh pipeline
+    bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
+    pipeline_layout_info.pPushConstantRanges = &bufferRange;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_spherePipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+    //use the triangle layout we created
+    pipelineBuilder._pipelineLayout = _spherePipelineLayout;
+    //connecting the vertex and pixel shaders to the pipeline
+    pipelineBuilder.set_shaders(triangleVertexShader, triangleFragShader);
+    //it will draw triangles
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    //filled triangles
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    //no backface culling
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    //no multisampling
+    pipelineBuilder.set_multisampling_none();
+    //no blending
+    pipelineBuilder.disable_blending();
+    //pipelineBuilder.enable_blending_additive();
+
+
+    //pipelineBuilder.disable_depthtest();
+    pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+
+    //connect the image format we will draw into, from draw image and depth image
+    pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(_depthImage.imageFormat);
+
+    //finally build the pipeline
+    _spherePipeline = pipelineBuilder.build_pipeline(_device);
+
+    //clean structures
+    vkDestroyShaderModule(_device, triangleFragShader, nullptr);
+    vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipelineLayout(_device, _spherePipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _spherePipeline, nullptr);
+        });
 }
 
 void VulkanEngine::init_default_data()
