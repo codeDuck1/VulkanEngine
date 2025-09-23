@@ -341,6 +341,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     // invert the Y direction on projection matrix so that we are more similar
     // to opengl and gltf axis
     projection[1][1] *= -1;
+    push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
     push_constants.worldMatrix = projection * view; // model matrix is implicit as identity
     push_constants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
     vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
@@ -800,7 +801,6 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
         vkCmdCopyBuffer(cmd, staging.buffer, newSurface.vertexBuffer.buffer, 1, &vertexCopy);
 
         VkBufferCopy indexCopy{ 0 };
-        indexCopy.dstOffset = 0;
         indexCopy.srcOffset = vertexBufferSize; // same offset as with memcpy!
         indexCopy.size = indexBufferSize;
 
@@ -998,8 +998,8 @@ void VulkanEngine::init_mesh_pipeline()
     //no multisampling
     pipelineBuilder.set_multisampling_none();
     //no blending
-    //pipelineBuilder.disable_blending();
-    pipelineBuilder.enable_blending_additive();
+    pipelineBuilder.disable_blending();
+    //pipelineBuilder.enable_blending_additive();
 
 
     //pipelineBuilder.disable_depthtest();
@@ -1020,6 +1020,10 @@ void VulkanEngine::init_mesh_pipeline()
         vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
         vkDestroyPipeline(_device, _meshPipeline, nullptr);
         });
+}
+
+void VulkanEngine::init_sphere_pipeline()
+{
 }
 
 void VulkanEngine::init_default_data()

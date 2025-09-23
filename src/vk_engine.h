@@ -123,6 +123,9 @@ public:
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
 
+	VkPipelineLayout _spherePipelineLayout;
+	VkPipeline _spherePipeline;
+
 	// meshes!
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 
@@ -182,6 +185,7 @@ private:
 	
 	void init_imgui();
 	void init_mesh_pipeline();
+	void init_sphere_pipeline();
 
 	void init_default_data();
 };

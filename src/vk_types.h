@@ -92,5 +92,6 @@ struct GPUMeshBuffers {
 // push constants for drawing the mesh
 struct GPUDrawPushConstants {
 	glm::mat4 worldMatrix;
+	glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
 	VkDeviceAddress vertexBuffer;
 };

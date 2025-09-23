@@ -4,6 +4,10 @@
 layout (location = 0) out vec3 outColor;
 layout (location = 1) out vec2 outUV;
 
+layout (location = 2) out vec3 outCameraPos;
+layout (location = 3) out vec3 outNormal;
+layout (location = 4) out vec3 outWorldPos;
+
 struct Vertex {
 
 	vec3 position;
@@ -22,6 +26,7 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer{
 layout( push_constant ) uniform constants
 {	
 	mat4 render_matrix;
+	vec4 camera_pos;
 	VertexBuffer vertexBuffer; // handle to gpu memory, use Vertexbuffer declaration above to interpret it
 } PushConstants;
 
@@ -36,6 +41,10 @@ void main()
 	outColor = v.color.xyz;
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
+
+	outCameraPos = PushConstants.camera_pos.xyz;
+	outNormal = v.normal;
+	outWorldPos = v.position;
 }
 
 
