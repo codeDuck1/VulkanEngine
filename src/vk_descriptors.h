@@ -35,3 +35,44 @@ struct DescriptorAllocator {
 	// pack of pointers into resources like buffer or image
 	VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout);
 };
+
+struct DescriptorAllocatorGrowable {
+public:
+	struct PoolSizeRatio {
+		VkDescriptorType type;
+		float ratio;
+	};
+
+	void init(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios);
+	void clear_pools(VkDevice device);
+	void destroy_pools(VkDevice device);
+
+	VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout, void* pNext = nullptr);
+private:
+	VkDescriptorPool get_pool(VkDevice device);
+	VkDescriptorPool create_pool(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios);
+
+	std::vector<PoolSizeRatio> ratios;
+	std::vector<VkDescriptorPool> fullPools;
+	std::vector<VkDescriptorPool> readyPools;
+	uint32_t setsPerPool;
+
+};
+
+struct DescriptorWriter {
+
+	// deque is guaranteed to keep ptrs to elements valid
+	// compared to queue, can add/remove from front AND back
+
+	// need to keep pointers to the infos bc writes stores them in their struct
+	std::deque<VkDescriptorImageInfo> imageInfos; 
+	std::deque<VkDescriptorBufferInfo> bufferInfos;
+	std::vector<VkWriteDescriptorSet> writes;
+
+	// used to bind the data
+	void write_image(int binding, VkImageView image, VkSampler sampler, VkImageLayout layout, VkDescriptorType type);
+	void write_buffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type);
+
+	void clear();
+	void update_set(VkDevice device, VkDescriptorSet set);
+};
