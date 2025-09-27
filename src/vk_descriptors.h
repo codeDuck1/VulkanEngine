@@ -2,6 +2,11 @@
 
 #include <vk_types.h>
 
+// DESCRIPTOR SET LAYOUT, ALLOC, UPDATE EXPLAINED:
+// dset layout says: i have a descriptor set with binding 0 that expects a storage image
+// dset alloc says: give me an actual descriptor set instance that follows that layout
+// dset update/writer says: for binding 0 in this descriptor set, point to this specific image in gpu memory
+
 struct DescriptorLayoutBuilder
 {
 	// config info struct

@@ -20,6 +20,7 @@ struct FrameData
 
 	// delete objects next frame after used
 	DeletionQueue _deletionQueue;
+	DescriptorAllocatorGrowable _frameDescriptors;
 };
 
 struct ComputePushConstants
@@ -28,6 +29,16 @@ struct ComputePushConstants
 	glm::vec4 data2;
 	glm::vec4 data3;
 	glm::vec4 data4;
+};
+
+struct GPUSceneData
+{
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 viewproj;
+	glm::vec4 ambientColor;
+	glm::vec4 sunlightDirection; 
+	glm::vec4 sunlightColor;
 };
 
 
@@ -106,6 +117,9 @@ public:
 	VkDescriptorSet _drawImageDescriptors;
 	// descriptor layout for above set, need for creating pipeline
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
+
+	GPUSceneData sceneData;
+	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
 
 	// pipelines
 	VkPipeline _gradientPipeline;
