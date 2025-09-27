@@ -110,6 +110,15 @@ public:
 	AllocatedImage _depthImage;
 	VkExtent2D _drawExtent;
 
+	// default textures
+	AllocatedImage _whiteImage;
+	AllocatedImage _blackImage;
+	AllocatedImage _greyImage;
+	AllocatedImage _errorCheckerboardImage;
+
+	VkSampler _defaultSamplerLinear;
+	VkSampler _defaultSamplerNearest;
+
 	// descriptors
 	DescriptorAllocator globalDescriptorAllocator;
 
@@ -120,6 +129,8 @@ public:
 
 	GPUSceneData sceneData;
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
+
+	VkDescriptorSetLayout _singleImageDescriptorLayout;
 
 	// pipelines
 	VkPipeline _gradientPipeline;
@@ -202,4 +213,8 @@ private:
 	void init_sphere_pipeline();
 
 	void init_default_data();
+
+	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+	void destroy_image(const AllocatedImage& img);
 };

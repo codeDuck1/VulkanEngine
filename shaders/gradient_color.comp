@@ -26,6 +26,7 @@ void main()
     {
         float blend = float(texelCoord.y)/(size.y); 
     
+        // write pixel data directly to an image
         imageStore(image, texelCoord, mix(topColor,bottomColor, blend));
     }
 }
