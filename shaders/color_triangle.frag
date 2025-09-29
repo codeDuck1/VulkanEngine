@@ -1,9 +1,15 @@
 #version 450
 
+// PBR material textures
+layout(set = 0, binding = 0) uniform sampler2D albedoMap;
+layout(set = 0, binding = 1) uniform sampler2D normalMap;
+layout(set = 0, binding = 2) uniform sampler2D metallicMap;
+layout(set = 0, binding = 3) uniform sampler2D roughnessMap;
+layout(set = 0, binding = 4) uniform sampler2D aoMap;
+
 //shader input
 layout (location = 0) in vec3 inColor;
-
-
+layout (location = 1) in vec2 inUVs; // uvs and texcoord same
 layout (location = 2) in vec3 CameraPos;
 layout (location = 3) in vec3 Normal;
 layout (location = 4) in vec3 WorldPos;
@@ -13,13 +19,13 @@ layout (location = 4) in vec3 WorldPos;
 layout (location = 0) out vec4 outFragColor;
 
 // Gold albedo (base color)
-vec3 albedo = vec3(1.0, 0.766, 0.336);
+//vec3 albedo = vec3(1.0, 0.766, 0.336);
 // Gold is a pure metal
-float metallic = 1.0;
+//float metallic = 1.0;
 // Polished gold - quite smooth but not perfect mirror
-float roughness = 0.1;
+//float roughness = 0.1;
 // No ambient occlusion for now (fully exposed surface)
-float ao = 1.0;
+//float ao = 1.0;
 
 // must match in sphere positions in world space
 vec3 lightPositions[4] = vec3[4](
@@ -81,11 +87,15 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 
 void main() 
 {
+    vec3 albedo     = pow(texture(albedoMap, inUVs).rgb, vec3(2.2));
+    float metallic  = texture(metallicMap, inUVs).r;
+    float roughness = texture(roughnessMap, inUVs).r;
+    float ao        = texture(aoMap, inUVs).r;
+
 	vec3 N = normalize(Normal);
 	vec3 V = normalize(CameraPos - WorldPos); // from frags world pos to cam pos. view vec
 
-
-        vec3 F0 = vec3(0.04); 
+    vec3 F0 = vec3(0.04); 
     F0 = mix(F0, albedo, metallic);
 	           
     // reflectance equation

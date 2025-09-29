@@ -3,7 +3,6 @@
 
 layout (location = 0) out vec3 outColor;
 layout (location = 1) out vec2 outUV;
-
 layout (location = 2) out vec3 outCameraPos;
 layout (location = 3) out vec3 outNormal;
 layout (location = 4) out vec3 outWorldPos;

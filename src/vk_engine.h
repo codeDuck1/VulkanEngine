@@ -42,6 +42,8 @@ struct GPUSceneData
 };
 
 
+
+
 // for use with imgui, to switch between different compute shaders
 struct ComputeEffect
 {
@@ -116,6 +118,10 @@ public:
 	AllocatedImage _greyImage;
 	AllocatedImage _errorCheckerboardImage;
 
+	// holds texture images
+	PBRMaterialProperties _pbrMatImages;
+	VkDescriptorSetLayout _pbrMaterialDescriptorLayout;
+
 	VkSampler _defaultSamplerLinear;
 	VkSampler _defaultSamplerNearest;
 
@@ -128,7 +134,8 @@ public:
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
 
 	GPUSceneData sceneData;
-	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
+	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout; // set itself created dynamically
+	
 
 	VkDescriptorSetLayout _singleImageDescriptorLayout;
 
@@ -180,6 +187,8 @@ public:
 
 	void draw_geometry(VkCommandBuffer cmd);
 	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
 	//run main loop
 	void run();
@@ -214,7 +223,6 @@ private:
 
 	void init_default_data();
 
-	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
-	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+
 	void destroy_image(const AllocatedImage& img);
 };

@@ -4,6 +4,8 @@
 #include <iostream>
 #include <vk_loader.h>
 
+#define STB_IMAGE_IMPLEMENTATION  // include the actual function implementations, not just the declarations. needed only once per project
+#include "stb_image.h"
 #include "vk_engine.h"
 #include "vk_initializers.h"
 #include "vk_types.h"
@@ -137,4 +139,40 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
     }
 
     return meshes;
+}
+
+
+AllocatedImage load_image_from_file(VulkanEngine* engine, std::filesystem::path filePath, bool mipmapped)
+{
+    // use stb lib to load image from file
+    // texchannels how many channels original img had, but converted into rgba per last param
+    int texWidth, texHeight, texChannels;
+    stbi_uc* pixels = stbi_load(filePath.string().c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+    if (!pixels) {
+        fmt::print("Failed to load texture at: {}", filePath.string());
+    }
+
+    VkExtent3D imageSize;
+    imageSize.width = texWidth;
+    imageSize.height = texHeight;
+    imageSize.depth = 1;
+
+    // Use your existing function with the pixel data
+    AllocatedImage image = engine->create_image(
+        pixels,
+        imageSize,
+        // INPUT TEXTURE FORMAT (depends on how image was authored):
+        // - Image authored in sRGB → VK_FORMAT_R8G8B8A8_SRGB (auto-converts non-linear to linear for use in shader calcs)
+        // - Image authored linear → VK_FORMAT_R8G8B8A8_UNORM (no conversion needed)
+        // - Image in sRGB but manual conversion → VK_FORMAT_R8G8B8A8_UNORM (you convert in shader)
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_IMAGE_USAGE_SAMPLED_BIT,
+        mipmapped
+    );
+
+    // free image data
+    stbi_image_free(pixels);
+
+    return image;
 }

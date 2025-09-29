@@ -326,8 +326,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     //writer.update_set(_device, globalDescriptor); // now global descriptor rdy to be used for drawing
 
 
-
-
     //begin a render pass connected to our draw image
     VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
     VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
@@ -358,15 +356,37 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     scissor.extent.height = _drawExtent.height;
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
-
     GPUDrawPushConstants push_constants;
-
     mainCamera.update(_deltaTime);
+    
+
+
+
+   
+    // Allocate PBR material descriptor set for this frame
+    VkDescriptorSet pbrMaterialSet = get_current_frame()._frameDescriptors.allocate(_device, _pbrMaterialDescriptorLayout);
+    // Write all PBR textures
+    DescriptorWriter writer;
+    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSamplerNearest,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSamplerNearest,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSamplerNearest,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSamplerNearest,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerNearest,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.update_set(_device, pbrMaterialSet);
+    // Bind the descriptor set to slot 0
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 1, &pbrMaterialSet, 0, nullptr);
+    // ----- END PBR DESCRIPTOR SET ------
+
+    
     // draw monkey
     glm::mat4 view = mainCamera.getViewMatrix();
     // camera projection
     glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
-
     // invert the Y direction on projection matrix so that we are more similar
     // to opengl and gltf axis
     projection[1][1] *= -1;
@@ -926,12 +946,24 @@ void VulkanEngine::init_descriptors()
         _singleImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
+    // PBR material descriptor set layout with 5 texture bindings
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // albedo
+        builder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // normal
+        builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // metallic
+        builder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // roughness
+        builder.add_binding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // ao
+        _pbrMaterialDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
+    }
+
     //make sure both the descriptor allocator and the new layout get cleaned up properly
     _mainDeletionQueue.push_function([&]() {
         globalDescriptorAllocator.destroy_pool(_device);
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _gpuSceneDataDescriptorLayout, nullptr); 
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _pbrMaterialDescriptorLayout, nullptr);
         });
 
 
@@ -1077,6 +1109,9 @@ void VulkanEngine::init_mesh_pipeline()
     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
     pipeline_layout_info.pPushConstantRanges = &bufferRange;
     pipeline_layout_info.pushConstantRangeCount = 1;
+    // ADDED DESCRIPTOR SET SUPPORT FOR TEXTURE!
+    pipeline_layout_info.pSetLayouts = &_pbrMaterialDescriptorLayout;  // layout for texture
+    pipeline_layout_info.setLayoutCount = 1; // num of descriptor sets
     VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_meshPipelineLayout));
 
     PipelineBuilder pipelineBuilder;
@@ -1121,18 +1156,18 @@ void VulkanEngine::init_sphere_pipeline()
 {
     VkShaderModule triangleFragShader;
     if (!vkutil::load_shader_module("../../shaders/sphere.frag.spv", _device, &triangleFragShader)) {
-        fmt::print("Error when building the triangle fragment shader module");
+        fmt::print("Error when building the sphere fragment shader module");
     }
     else {
-        fmt::print("Triangle fragment shader succesfully loaded");
+        fmt::print("Sphere fragment shader succesfully loaded");
     }
 
     VkShaderModule triangleVertexShader;
     if (!vkutil::load_shader_module("../../shaders/sphere.vert.spv", _device, &triangleVertexShader)) {
-        fmt::print("Error when building the triangle vertex shader module");
+        fmt::print("Error when building the sphere vertex shader module");
     }
     else {
-        fmt::print("Triangle vertex shader succesfully loaded");
+        fmt::print("Sphere vertex shader succesfully loaded");
     }
 
     VkPushConstantRange bufferRange{};
@@ -1215,6 +1250,18 @@ void VulkanEngine::init_default_data()
     _errorCheckerboardImage = create_image(pixels.data(), VkExtent3D{ 16, 16, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
         VK_IMAGE_USAGE_SAMPLED_BIT);
 
+    _pbrMatImages =
+    {
+        .albedoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_albedo.png", false),
+        .normalMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_normal-ogl.png", false),
+        .metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
+        .roughnessMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_roughness.png", false),
+        .aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false)
+    };
+
+
+
+
     // leave all params as default for samplers besides min/maag filters
     VkSamplerCreateInfo sampl = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
 
@@ -1235,6 +1282,13 @@ void VulkanEngine::init_default_data()
         destroy_image(_greyImage);
         destroy_image(_blackImage);
         destroy_image(_errorCheckerboardImage);
+
+        // Destroy PBR material images
+        destroy_image(_pbrMatImages.albedoMap);
+        destroy_image(_pbrMatImages.normalMap);
+        destroy_image(_pbrMatImages.metallicMap);
+        destroy_image(_pbrMatImages.roughnessMap);
+        destroy_image(_pbrMatImages.aoMap);
         });
 
 }

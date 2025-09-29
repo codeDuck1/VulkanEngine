@@ -95,3 +95,12 @@ struct GPUDrawPushConstants {
 	glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
 	VkDeviceAddress vertexBuffer;
 };
+
+struct PBRMaterialProperties
+{
+	AllocatedImage albedoMap;
+	AllocatedImage normalMap;
+	AllocatedImage metallicMap;
+	AllocatedImage roughnessMap;
+	AllocatedImage aoMap;
+};

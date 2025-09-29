@@ -30,3 +30,6 @@ class VulkanEngine;
 // standard class that wraps a type, vector of mesh assets and allows for it to be errored/null
 // since file loading can fail for many reasons
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngine* engine, std::filesystem::path filePath);
+
+AllocatedImage load_image_from_file(VulkanEngine* engine, std::filesystem::path filePath, bool mipmapped);
+
