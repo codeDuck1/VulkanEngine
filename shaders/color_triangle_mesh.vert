@@ -6,6 +6,8 @@ layout (location = 1) out vec2 outUV;
 layout (location = 2) out vec3 outCameraPos;
 layout (location = 3) out vec3 outNormal;
 layout (location = 4) out vec3 outWorldPos;
+// TREATED AS 3 VEC 3 SLOTS, thus using locations 5,6,7
+layout (location = 5) out mat3 tbnMatrix; 
 
 struct Vertex {
 
@@ -14,6 +16,11 @@ struct Vertex {
 	vec3 normal;
 	float uv_y;
 	vec4 color;
+
+	//float _pad1;
+	vec3 tangent;
+	vec3 bitangent;
+	//float _pad2;
 }; 
 
 // TELLS PUSH CONSTANT HOW TO INTERPRET GPU MEMORY:
@@ -44,6 +51,13 @@ void main()
 	outCameraPos = PushConstants.camera_pos.xyz;
 	outNormal = v.normal;
 	outWorldPos = v.position;
+
+	// create TBN matrix that transforms tangent-space vector to a diff coord space
+	vec3 T = normalize(v.tangent);
+	vec3 B = normalize(v.bitangent);
+	vec3 N = normalize(v.normal);
+	tbnMatrix = mat3(T, B, N);
+
 }
 
 

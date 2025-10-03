@@ -392,10 +392,10 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     projection[1][1] *= -1;
     push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
     push_constants.worldMatrix = projection * view; // model matrix is implicit as identity
-    push_constants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
+    push_constants.vertexBuffer = testMeshes[4]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
     vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-    vkCmdBindIndexBuffer(cmd, testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
+    vkCmdBindIndexBuffer(cmd, testMeshes[4]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, testMeshes[4]->surfaces[0].count, 1, testMeshes[4]->surfaces[0].startIndex, 0, 0);
 
 
     // Draw light spheres
@@ -1225,6 +1225,11 @@ void VulkanEngine::init_default_data()
 {
     // load some meshes
     testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
+    auto newMesh = loadGltfMeshes(this, "..\\..\\assets\\cat_statue.glb").value();
+    testMeshes.push_back(newMesh[0]); // only one mesh from cat
+
+    auto newMesh1 = loadGltfMeshes(this, "..\\..\\assets\\tangentSphere.glb").value();
+    testMeshes.push_back(newMesh1[0]); // only one mesh from cat
 
     // 3 default textures, white, grey, black. 1x1 pixel textures with one solid color
     uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
@@ -1252,11 +1257,17 @@ void VulkanEngine::init_default_data()
 
     _pbrMatImages =
     {
-        .albedoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_albedo.png", false),
-        .normalMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_normal-ogl.png", false),
-        .metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
-        .roughnessMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_roughness.png", false),
-        .aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false)
+        //.albedoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_albedo.png", false),
+        //.normalMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_normal-ogl.png", false),
+        //.metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
+        //.roughnessMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_roughness.png", false),
+        //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false)
+
+        .albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
+        .normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
+        .metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
+        .roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
+        .aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false)
     };
 
 

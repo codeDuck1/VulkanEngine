@@ -72,6 +72,10 @@ struct AllocatedBuffer
 
 // important to compact data as much as possible for vertex, will do later.
 // interleaved to match shader version
+
+// Padding required because C++ compiler aligns vec3 members differently than GLSL std430.
+// Without padding, offsets don't match and GPU reads vertex data from wrong memory locations.
+#pragma pack(push, 1)
 struct Vertex {
 
 	glm::vec3 position;
@@ -79,7 +83,16 @@ struct Vertex {
 	glm::vec3 normal;
 	float uv_y;
 	glm::vec4 color;
+
+	// for normal mapping
+	// these simply create a little local xyz coord frame 
+	// on each shape face 
+	float ok;
+	glm::vec3 tangent;
+	glm::vec3 bitangent;    
+	float ok2;
 };
+#pragma pack(pop)
 
 // holds the resources needed for a mesh
 struct GPUMeshBuffers {
