@@ -74,7 +74,7 @@ struct AllocatedBuffer
 // interleaved to match shader version
 
 // Padding required because C++ compiler aligns vec3 members differently than GLSL std430.
-// Without padding, offsets don't match and GPU reads vertex data from wrong memory locations.
+// std430 rounds vec3 up to vec4, with 16 bytes: 4 elems x 4 bytes each
 #pragma pack(push, 1)
 struct Vertex {
 
@@ -85,12 +85,9 @@ struct Vertex {
 	glm::vec4 color;
 
 	// for normal mapping
-	// these simply create a little local xyz coord frame 
-	// on each shape face 
-	float ok;
-	glm::vec3 tangent;
-	glm::vec3 bitangent;    
-	float ok2;
+	// these simply create a little local xyz coord frame on each shape face 
+	glm::vec4 tangent;
+	glm::vec4 bitangent;    
 };
 #pragma pack(pop)
 

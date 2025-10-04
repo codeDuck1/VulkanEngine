@@ -89,8 +89,8 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
                         newvtx.uv_x = 0;
                         newvtx.uv_y = 0;
                         //newvtx.ok = 0.f;
-                        newvtx.tangent = glm::vec3{ 0.f };
-                        newvtx.bitangent = glm::vec3{ 0.f };
+                        newvtx.tangent = glm::vec4{ 0.f };
+                        newvtx.bitangent = glm::vec4{ 0.f };
                         //newvtx.ok2 = 0.f;
                         vertices[initial_vtx + index] = newvtx; // storing newly created vertexx into pos in vertices array
 
@@ -134,12 +134,12 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
             if (tangents != p.attributes.end()) {
                 fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[(*tangents).second],
                     [&](glm::vec4 v, size_t index) {
-                        vertices[initial_vtx + index].tangent = glm::vec3(v.x, v.y, v.z);
+                        vertices[initial_vtx + index].tangent = glm::vec4(v.x, v.y, v.z, 1.0f);
                         // GLTF stores handedness in w component
                         // Bitangent = cross(normal, tangent) * handedness
                         glm::vec3 n = vertices[initial_vtx + index].normal;
                         glm::vec3 t = glm::vec3(v.x, v.y, v.z);
-                        vertices[initial_vtx + index].bitangent = glm::cross(n, t) * v.w;
+                        vertices[initial_vtx + index].bitangent = glm::vec4(glm::cross(n, t) * v.w, 0.0f);
                     });
             }
             newmesh.surfaces.push_back(newSurface);
@@ -172,7 +172,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
             }
         }
 
-        fmt::print("Vertex size with manual padding: {}\n", sizeof(Vertex));
+       // fmt::print("Vertex size with manual padding: {}\n", sizeof(Vertex));
 
         // upload mesh data to gpu buffers
         newmesh.meshBuffers = engine->uploadMesh(indices, vertices);
@@ -279,13 +279,9 @@ void calculateTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t
         // Gram-Schmidt to make bitangent perpendicular to both normal and tangent
         // This ensures all three vectors are orthogonal
         b = glm::normalize(b - n * glm::dot(n, b) - t * glm::dot(t, b));
-        vertices[i].tangent = t;
-        vertices[i].bitangent = b;
 
+        // Store as vec4 with w = 0
+        vertices[i].tangent = glm::vec4(t, 0.0f);
+        vertices[i].bitangent = glm::vec4(b, 0.0f);
     }
-
-    fmt::print("Tangent calculation complete. Sample tangent: ({}, {}, {})\n",
-        vertices[0].tangent.x, vertices[0].tangent.y, vertices[0].tangent.z);
-    fmt::print("Sample bitangent: ({}, {}, {})\n",
-        vertices[0].bitangent.x, vertices[0].bitangent.y, vertices[0].bitangent.z);
 }

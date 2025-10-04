@@ -17,10 +17,8 @@ struct Vertex {
 	vec4 color;
 
 	// for normal map
-	//float _pad1;
-	vec3 tangent;    
-    vec3 bitangent;
-	//float _pad2;
+	vec4 tangent;    
+    vec4 bitangent;
 }; 
 
 // TELLS PUSH CONSTANT HOW TO INTERPRET GPU MEMORY:

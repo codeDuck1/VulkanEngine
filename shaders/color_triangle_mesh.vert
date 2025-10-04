@@ -17,10 +17,8 @@ struct Vertex {
 	float uv_y;
 	vec4 color;
 
-	//float _pad1;
-	vec3 tangent;
-	vec3 bitangent;
-	//float _pad2;
+	vec4 tangent;
+	vec4 bitangent;
 }; 
 
 // TELLS PUSH CONSTANT HOW TO INTERPRET GPU MEMORY:
@@ -53,9 +51,9 @@ void main()
 	outWorldPos = v.position;
 
 	// create TBN matrix that transforms tangent-space vector to a diff coord space
-	vec3 T = normalize(v.tangent);
-	vec3 B = normalize(v.bitangent);
-	vec3 N = normalize(v.normal);
+	vec3 T = normalize(v.tangent.xyz);
+	vec3 B = normalize(v.bitangent.xyz);
+	vec3 N = normalize(v.normal.xyz);
 	tbnMatrix = mat3(T, B, N);
 
 }
