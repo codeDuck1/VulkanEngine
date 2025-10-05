@@ -303,6 +303,8 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
     vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 16.0), std::ceil(_drawExtent.height / 16.0), 1);
 }
 
+
+float rotAngle = 0.0f;
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 {
     // allocate a new uniform buffer and write it into a descriptor set every frame (for scene shared data)
@@ -377,13 +379,20 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerNearest,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSamplerNearest,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, pbrMaterialSet);
+
     // Bind the descriptor set to slot 0
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 1, &pbrMaterialSet, 0, nullptr);
     // ----- END PBR DESCRIPTOR SET ------
 
     
     // draw monkey
+    glm::mat4 model = glm::mat4(1.0f);
+    rotAngle += _deltaTime * glm::radians(90.0f);
+    model = glm::rotate(model, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+
     glm::mat4 view = mainCamera.getViewMatrix();
     // camera projection
     glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
@@ -392,10 +401,11 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     projection[1][1] *= -1;
     push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
     push_constants.worldMatrix = projection * view; // model matrix is implicit as identity
-    push_constants.vertexBuffer = testMeshes[4]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
+    push_constants.modelMatrix = model;
+    push_constants.vertexBuffer = testMeshes[0]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
     vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-    vkCmdBindIndexBuffer(cmd, testMeshes[4]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, testMeshes[4]->surfaces[0].count, 1, testMeshes[4]->surfaces[0].startIndex, 0, 0);
+    vkCmdBindIndexBuffer(cmd, testMeshes[0]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, testMeshes[0]->surfaces[0].count, 1, testMeshes[0]->surfaces[0].startIndex, 0, 0);
 
 
     // Draw light spheres
@@ -428,7 +438,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         glm::mat4 model = glm::translate(glm::mat4(1.0f), lightPositions[i]);
         model = glm::scale(model, glm::vec3(0.3f)); 
 
-        push_constants.worldMatrix = projection * view * model;
+        push_constants.worldMatrix = projection * view;
+        push_constants.modelMatrix = model;
         push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
         push_constants.vertexBuffer = testMeshes[1]->meshBuffers.vertexBufferAddress; // sphere mesh at index 1. buffer memory contains multiple meshes
 
@@ -954,6 +965,7 @@ void VulkanEngine::init_descriptors()
         builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // metallic
         builder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // roughness
         builder.add_binding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // ao
+        builder.add_binding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // height
         _pbrMaterialDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
@@ -1261,13 +1273,15 @@ void VulkanEngine::init_default_data()
         //.normalMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_normal-ogl.png", false),
         //.metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
         //.roughnessMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_roughness.png", false),
-        //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false)
+        //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
+        //.heightMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_height.png", false)
 
         .albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
         .normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
         .metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
         .roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
-        .aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false)
+        .aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
+        .heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false)
     };
 
 
@@ -1300,6 +1314,7 @@ void VulkanEngine::init_default_data()
         destroy_image(_pbrMatImages.metallicMap);
         destroy_image(_pbrMatImages.roughnessMap);
         destroy_image(_pbrMatImages.aoMap);
+        destroy_image(_pbrMatImages.heightMap);
         });
 
 }

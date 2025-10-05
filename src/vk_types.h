@@ -102,6 +102,7 @@ struct GPUMeshBuffers {
 // push constants for drawing the mesh
 struct GPUDrawPushConstants {
 	glm::mat4 worldMatrix;
+	glm::mat4 modelMatrix;
 	glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
 	VkDeviceAddress vertexBuffer;
 };
@@ -113,4 +114,5 @@ struct PBRMaterialProperties
 	AllocatedImage metallicMap;
 	AllocatedImage roughnessMap;
 	AllocatedImage aoMap;
+	AllocatedImage heightMap;
 };

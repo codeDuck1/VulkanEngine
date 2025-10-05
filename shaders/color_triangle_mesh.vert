@@ -30,33 +30,41 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer{
 layout( push_constant ) uniform constants
 {	
 	mat4 render_matrix;
+    mat4 model_matrix;
 	vec4 camera_pos;
 	VertexBuffer vertexBuffer; // handle to gpu memory, use Vertexbuffer declaration above to interpret it
 } PushConstants;
 
 void main() 
 {	
-	//load vertex data from device address
-	// PushConstants.vertexBuffer contains gpu memory address
-	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
+    Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
 
-	//output data
-	gl_Position = PushConstants.render_matrix *vec4(v.position, 1.0f);
-	outColor = v.color.xyz;
-	outUV.x = v.uv_x;
-	outUV.y = v.uv_y;
+    // Then to clip space
+    vec4 worldPos = PushConstants.model_matrix * vec4(v.position, 1.0f);
+    gl_Position = PushConstants.render_matrix * worldPos; 
 
-	outCameraPos = PushConstants.camera_pos.xyz;
-	outNormal = v.normal;
-	outWorldPos = v.position;
+    outColor = v.color.xyz;
+    outUV.x = v.uv_x;
+    outUV.y = v.uv_y;
 
-	// create TBN matrix that transforms tangent-space vector to a diff coord space
-	vec3 T = normalize(v.tangent.xyz);
-	vec3 B = normalize(v.bitangent.xyz);
-	vec3 N = normalize(v.normal.xyz);
-	tbnMatrix = mat3(T, B, N);
+    // Transform TBN to world space
+    mat3 normalMatrix = mat3(transpose(inverse(PushConstants.model_matrix))); // for non uniform scaling
+    vec3 T = normalize(normalMatrix * v.tangent.xyz);
+    vec3 B = normalize(normalMatrix * v.bitangent.xyz);
+    vec3 N = normalize(normalMatrix * v.normal.xyz);
 
+    mat3 TBN = mat3(T, B, N); // tangent to world space
+    mat3 TBN_inverse = transpose(TBN); // world space to tangent space
+
+    // Transform to tangent space
+    outCameraPos = TBN_inverse * PushConstants.camera_pos.xyz;
+    outWorldPos = TBN_inverse * worldPos.xyz;
+    tbnMatrix = TBN_inverse;
 }
+
+
+
+
 
 
 // upload code in engine puts data into gpu memory, and push_constant passes

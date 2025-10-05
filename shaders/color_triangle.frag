@@ -6,6 +6,7 @@ layout(set = 0, binding = 1) uniform sampler2D normalMap;
 layout(set = 0, binding = 2) uniform sampler2D metallicMap;
 layout(set = 0, binding = 3) uniform sampler2D roughnessMap;
 layout(set = 0, binding = 4) uniform sampler2D aoMap;
+layout(set = 0, binding = 5) uniform sampler2D heightMap;
 
 //shader input
 layout (location = 0) in vec3 inColor;
@@ -86,32 +87,70 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
+{ 
+    const float height_scale = 0.1;
+    const float numLayers = 256.0;  // More layers = better quality
+    float layerDepth = 1.0 / numLayers;
+    float currentLayerDepth = 0.0;
+    vec2 P = viewDir.xy / viewDir.z * height_scale; 
+
+    vec2 deltaTexCoords = P / numLayers;
+    
+    vec2 currentTexCoords = texCoords;
+    float currentDepthMapValue = texture(heightMap, currentTexCoords).r;
+  
+    while(currentLayerDepth < currentDepthMapValue)
+    {
+        currentTexCoords -= deltaTexCoords;
+        currentDepthMapValue = texture(heightMap, currentTexCoords).r;  
+        currentLayerDepth += layerDepth;  
+    }
+
+    // get texture coordinates before collision (reverse operations)
+    vec2 prevTexCoords = currentTexCoords + deltaTexCoords;
+
+    // get depth after and before collision for linear interpolation
+    float afterDepth  = currentDepthMapValue - currentLayerDepth;
+    float beforeDepth = texture(heightMap, prevTexCoords).r - currentLayerDepth + layerDepth;
+ 
+    // interpolation of texture coordinates
+    float weight = afterDepth / (afterDepth - beforeDepth);
+    vec2 finalTexCoords = prevTexCoords * weight + currentTexCoords * (1.0 - weight);
+    
+    return finalTexCoords;
+}
+
+
 void main() 
 {
-
-    vec3 albedo     = pow(texture(albedoMap, inUVs).rgb, vec3(2.2));
-    float metallic  = texture(metallicMap, inUVs).r;
-    float roughness = texture(roughnessMap, inUVs).r;
-    float ao        = texture(aoMap, inUVs).r;
-
-    //vec3 N = normalize(Normal); old
-	vec3 N = texture(normalMap, inUVs).rgb;
-    N = N * 2.0 - 1.0; // map from 0-1 to -1-1 to use as normals
-    N = normalize(tbnMatrix * N);
-
-	vec3 V = normalize(CameraPos - WorldPos); // from frags world pos to cam pos. view vec
-
+    // Everything is already in tangent space
+    vec3 viewDir = normalize(CameraPos - WorldPos);
+    
+    vec2 parallaxUVs = ParallaxMapping(inUVs, viewDir);
+    
+    vec3 albedo     = pow(texture(albedoMap, parallaxUVs).rgb, vec3(2.2));
+    float metallic  = texture(metallicMap, parallaxUVs).r;
+    float roughness = texture(roughnessMap, parallaxUVs).r;
+    float ao        = texture(aoMap, parallaxUVs).r;
+    
+    vec3 N = texture(normalMap, parallaxUVs).rgb;
+    N = normalize(N * 2.0 - 1.0);
+    
+    vec3 V = normalize(CameraPos - WorldPos);
+    
     vec3 F0 = vec3(0.04); 
     F0 = mix(F0, albedo, metallic);
-	           
-    // reflectance equation
+    
     vec3 Lo = vec3(0.0);
     for(int i = 0; i < 4; ++i) 
     {
-        // calculate per-light radiance
-        vec3 L = normalize(lightPositions[i] - WorldPos);
+        // Transform light position to tangent space
+        vec3 lightPosTangent = tbnMatrix * lightPositions[i];
+        
+        vec3 L = normalize(lightPosTangent - WorldPos);
         vec3 H = normalize(V + L);
-        float distance    = length(lightPositions[i] - WorldPos);
+        float distance = length(lightPosTangent - WorldPos);
         float attenuation = 1.0 / (distance * distance);
         vec3 radiance     = lightColors[i] * attenuation;        
         
@@ -140,6 +179,4 @@ void main()
     color = pow(color, vec3(1.0/2.2));  
    
     outFragColor = vec4(color, 1.0);
-
-	
 }
