@@ -20,14 +20,11 @@ layout (location = 5) in mat3 tbnMatrix;
 // connects to the render attachments of render pass
 layout (location = 0) out vec4 outFragColor;
 
-// Gold albedo (base color)
-//vec3 albedo = vec3(1.0, 0.766, 0.336);
-// Gold is a pure metal
-//float metallic = 1.0;
-// Polished gold - quite smooth but not perfect mirror
-//float roughness = 0.1;
-// No ambient occlusion for now (fully exposed surface)
-//float ao = 1.0;
+layout(push_constant) uniform BumpConstants {
+    layout(offset = 152) float heightScale;
+    layout(offset = 156) int numLayers;
+    layout(offset = 160) int bumpMode;
+} bump;
 
 // must match in sphere positions in world space
 vec3 lightPositions[4] = vec3[4](
@@ -89,8 +86,10 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 
 vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
 { 
-    const float height_scale = 0.1;
-    const float numLayers = 256.0;  // More layers = better quality
+    const float height_scale = bump.heightScale;
+    const float numLayers = bump.numLayers;  // More layers = better quality
+
+
     float layerDepth = 1.0 / numLayers;
     float currentLayerDepth = 0.0;
     vec2 P = viewDir.xy / viewDir.z * height_scale; 
@@ -124,15 +123,21 @@ vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
 
 void main() 
 {
+    vec2 scaledUVs = inUVs * 1.0;
+    
     // Everything is already in tangent space
     vec3 viewDir = normalize(CameraPos - WorldPos);
     
-    vec2 parallaxUVs = ParallaxMapping(inUVs, viewDir);
-    
+    vec2 parallaxUVs = ParallaxMapping(scaledUVs, viewDir);
     vec3 albedo     = pow(texture(albedoMap, parallaxUVs).rgb, vec3(2.2));
-    float metallic  = texture(metallicMap, parallaxUVs).r;
-    float roughness = texture(roughnessMap, parallaxUVs).r;
-    float ao        = texture(aoMap, parallaxUVs).r;
+
+    //float metallic  = texture(metallicMap, parallaxUVs).r;
+    //float roughness = texture(roughnessMap, parallaxUVs).r;
+    //float ao        = texture(aoMap, parallaxUVs).r;
+    float metallic  = 0.0;  // Default: non-metallic
+    float roughness = 0.5;  // Default: medium roughness
+    float ao        = 1.0;  // Default: no occlusion
+
     
     vec3 N = texture(normalMap, parallaxUVs).rgb;
     N = normalize(N * 2.0 - 1.0);

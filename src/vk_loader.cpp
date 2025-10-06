@@ -144,7 +144,8 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
             }
             newmesh.surfaces.push_back(newSurface);
         }
-        calculateTangents(vertices, indices);
+  
+
         //// Check if any tangents were loaded from GLTF
         bool hasTangents = false;
         for (const auto& vtx : vertices) {
@@ -156,7 +157,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
         // Only calculate tangents if not in the GLTF file
         if (!hasTangents) {
             calculateTangents(vertices, indices);
-            //fmt::print("Calculated tangents for mesh: {}\n", newmesh.name);
+            fmt::print("Calculated tangents for mesh: {}\n", newmesh.name);
         }
         else {
             //fmt::print("Using tangents from GLTF for mesh: {}\n", newmesh.name);

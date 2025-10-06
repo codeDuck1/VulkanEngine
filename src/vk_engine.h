@@ -31,6 +31,13 @@ struct ComputePushConstants
 	glm::vec4 data4;
 };
 
+struct BumpPushConstants
+{
+	float heightScale;
+	int numLayers;
+	int bumpMode;
+};
+
 struct GPUSceneData
 {
 	glm::mat4 view;
@@ -72,6 +79,7 @@ public:
 	bool stop_rendering{ false };
 	VkExtent2D _windowExtent{ 1700 , 900 };
 	bool resize_requested{ false };
+	bool cameraInputEnabled{ true };
 
 	struct SDL_Window* _window{ nullptr };
 
@@ -151,6 +159,9 @@ public:
 	// for imgui selection
 	std::vector<ComputeEffect> backgroundEffects;
 	int currentBackgroundEffect{ 0 };
+	float heightScale{ 0.1f };
+	int numLayers{ 32 };
+	int bumpMode{ 0 };
 
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;

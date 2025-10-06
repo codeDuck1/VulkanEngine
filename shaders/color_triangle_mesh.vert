@@ -53,6 +53,7 @@ void main()
     vec3 B = normalize(normalMatrix * v.bitangent.xyz);
     vec3 N = normalize(normalMatrix * v.normal.xyz);
 
+
     mat3 TBN = mat3(T, B, N); // tangent to world space
     mat3 TBN_inverse = transpose(TBN); // world space to tangent space
 

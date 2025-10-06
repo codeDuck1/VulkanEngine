@@ -359,12 +359,10 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     GPUDrawPushConstants push_constants;
+    BumpPushConstants bump_push_constants;
     mainCamera.update(_deltaTime);
     
 
-
-
-   
     // Allocate PBR material descriptor set for this frame
     VkDescriptorSet pbrMaterialSet = get_current_frame()._frameDescriptors.allocate(_device, _pbrMaterialDescriptorLayout);
     // Write all PBR textures
@@ -402,10 +400,14 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
     push_constants.worldMatrix = projection * view; // model matrix is implicit as identity
     push_constants.modelMatrix = model;
-    push_constants.vertexBuffer = testMeshes[0]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
+    push_constants.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
+    bump_push_constants.heightScale = heightScale;
+    bump_push_constants.numLayers = numLayers;
+    bump_push_constants.bumpMode = bumpMode;
     vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-    vkCmdBindIndexBuffer(cmd, testMeshes[0]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, testMeshes[0]->surfaces[0].count, 1, testMeshes[0]->surfaces[0].startIndex, 0, 0);
+    vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(GPUDrawPushConstants), sizeof(BumpPushConstants), &bump_push_constants);
+    vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
 
 
     // Draw light spheres
@@ -470,7 +472,8 @@ void VulkanEngine::run()
             {
                 if (e.key.keysym.sym == SDLK_e)
                 {
-                    fmt::print("My first code in my new Vulkan engine, woohoo!!");
+                    cameraInputEnabled = !cameraInputEnabled;
+
                 }
             }
 
@@ -483,7 +486,10 @@ void VulkanEngine::run()
                 }
             }
 
-            mainCamera.processSDLEvent(e);
+            if (cameraInputEnabled)
+            {
+                mainCamera.processSDLEvent(e);
+            }
             // send SDL event to imgui for handling
             ImGui_ImplSDL2_ProcessEvent(&e);
         }
@@ -525,6 +531,16 @@ void VulkanEngine::run()
         }
 
         ImGui::End();
+
+        // second imgui window
+        if (ImGui::Begin("Parallax Settings")) {
+            ImGui::SliderFloat("Height Scale", &heightScale, 0.01f, 0.5f);
+            ImGui::SliderInt("Num Layers", &numLayers, 1, 32);
+            ImGui::SliderInt("Bump Mode", &bumpMode, 0, 2);
+        }
+        ImGui::End();
+
+
         //make imgui calculate internal draw structures
         // vertices, draws, etc, but no drawing on its own
         ImGui::Render();
@@ -653,7 +669,6 @@ void VulkanEngine::init_swapchain()
     vmaCreateImage(_allocator, &rimg_info, &rimg_allocinfo, &_drawImage.image, &_drawImage.allocation, nullptr);
 
     //build a image-view for the draw image to use for rendering
-    // in vulkan need image view to accesss images. generally thin wrapper
     // over img that lets do thing like limit access to only 1 mipmap
     VkImageViewCreateInfo rview_info = vkinit::imageview_create_info(_drawImage.imageFormat, _drawImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -1059,8 +1074,8 @@ void VulkanEngine::init_background_pipelines()
     gradient.data = {};
 
     // default colors
-    gradient.data.data1 = glm::vec4(1, 0, 0, 1);
-    gradient.data.data2 = glm::vec4(0, 0, 1, 1);
+    gradient.data.data1 = glm::vec4(0, 0, 0, 1);
+    gradient.data.data2 = glm::vec4(0, 0, 0, 1);
 
     // create pipeline and store in compute effects
     VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &gradient.pipeline));
@@ -1113,14 +1128,18 @@ void VulkanEngine::init_mesh_pipeline()
         fmt::print("Triangle vertex shader succesfully loaded");
     }
 
-    VkPushConstantRange bufferRange{};
-    bufferRange.offset = 0;
-    bufferRange.size = sizeof(GPUDrawPushConstants); // new for mesh pipeline
-    bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    VkPushConstantRange bufferRanges[2];
+    bufferRanges[0].offset = 0;
+    bufferRanges[0].size = sizeof(GPUDrawPushConstants); // new for mesh pipeline
+    bufferRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    bufferRanges[1].offset = sizeof(GPUDrawPushConstants);
+    bufferRanges[1].size = sizeof(BumpPushConstants);
+    bufferRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-    pipeline_layout_info.pPushConstantRanges = &bufferRange;
-    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pPushConstantRanges = bufferRanges;
+    pipeline_layout_info.pushConstantRangeCount = 2;
     // ADDED DESCRIPTOR SET SUPPORT FOR TEXTURE!
     pipeline_layout_info.pSetLayouts = &_pbrMaterialDescriptorLayout;  // layout for texture
     pipeline_layout_info.setLayoutCount = 1; // num of descriptor sets
@@ -1243,6 +1262,9 @@ void VulkanEngine::init_default_data()
     auto newMesh1 = loadGltfMeshes(this, "..\\..\\assets\\tangentSphere.glb").value();
     testMeshes.push_back(newMesh1[0]); // only one mesh from cat
 
+    auto newMesh2 = loadGltfMeshes(this, "..\\..\\assets\\box2.glb").value();
+    testMeshes.push_back(newMesh2[0]); // only one mesh from cat
+
     // 3 default textures, white, grey, black. 1x1 pixel textures with one solid color
     uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
     _whiteImage = create_image((void*)&white, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
@@ -1276,12 +1298,22 @@ void VulkanEngine::init_default_data()
         //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
         //.heightMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_height.png", false)
 
-        .albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
-        .normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
-        .metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
+        //.albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
+        //.normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
+        //.metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
+        //.roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
+        //.aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
+        //.heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false),
+
+        .albedoMap = load_image_from_file(this, "..\\..\\assets\\toybox\\wood.png", false),
+        .normalMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_normal.png", false),
+        .metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
         .roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
-        .aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
-        .heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false)
+        .aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
+        .heightMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_disp.png", false)
+
+
+
     };
 
 
@@ -1292,6 +1324,10 @@ void VulkanEngine::init_default_data()
 
     sampl.magFilter = VK_FILTER_NEAREST;
     sampl.minFilter = VK_FILTER_NEAREST;
+
+    //sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
+    //sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
+    //sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
 
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerNearest);
 
