@@ -123,24 +123,46 @@ vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
 
 void main() 
 {
-    vec2 scaledUVs = inUVs * 1.0;
-    
     // Everything is already in tangent space
     vec3 viewDir = normalize(CameraPos - WorldPos);
-    
-    vec2 parallaxUVs = ParallaxMapping(scaledUVs, viewDir);
-    vec3 albedo     = pow(texture(albedoMap, parallaxUVs).rgb, vec3(2.2));
 
-    //float metallic  = texture(metallicMap, parallaxUVs).r;
-    //float roughness = texture(roughnessMap, parallaxUVs).r;
-    //float ao        = texture(aoMap, parallaxUVs).r;
+
+    vec2 preUVs;
+
+    if(bump.bumpMode == 0 || bump.bumpMode == 1)
+    {
+        preUVs = ParallaxMapping(inUVs, viewDir);
+    }
+    if(bump.bumpMode == 2 || bump.bumpMode == 3)
+    {
+        preUVs = inUVs;
+    }
+    vec3 albedo = pow(texture(albedoMap, preUVs).rgb, vec3(2.2));
+
+    //float metallic  = texture(metallicMap, preUVs).r;
+    //float roughness = texture(roughnessMap, preUVs).r;
+    //float ao        = texture(aoMap, preUVs).r;
     float metallic  = 0.0;  // Default: non-metallic
     float roughness = 0.5;  // Default: medium roughness
     float ao        = 1.0;  // Default: no occlusion
 
+    // bump mode 0 should be both normal map and parallax
+    // bump mode 1 only parallax
+    // bump mode 2 only normal map
+    // bump mode 3 neither parallax or normal map
+    vec3 N;
+    if(bump.bumpMode == 0 || bump.bumpMode == 2)
+    {
+        N = texture(normalMap, preUVs).rgb;
+        N = normalize(N * 2.0 - 1.0);
+    }
+    if(bump.bumpMode == 1 || bump.bumpMode == 3)
+    {
+        // straight up normal since in tangent space
+        N = vec3(0.0, 0.0, 1.0);
+    }
+
     
-    vec3 N = texture(normalMap, parallaxUVs).rgb;
-    N = normalize(N * 2.0 - 1.0);
     
     vec3 V = normalize(CameraPos - WorldPos);
     

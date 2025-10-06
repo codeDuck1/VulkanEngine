@@ -388,7 +388,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     
     // draw monkey
     glm::mat4 model = glm::mat4(1.0f);
-    rotAngle += _deltaTime * glm::radians(90.0f);
+    rotAngle += _deltaTime * glm::radians(60.0f);
     model = glm::rotate(model, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 
     glm::mat4 view = mainCamera.getViewMatrix();
@@ -536,7 +536,7 @@ void VulkanEngine::run()
         if (ImGui::Begin("Parallax Settings")) {
             ImGui::SliderFloat("Height Scale", &heightScale, 0.01f, 0.5f);
             ImGui::SliderInt("Num Layers", &numLayers, 1, 32);
-            ImGui::SliderInt("Bump Mode", &bumpMode, 0, 2);
+            ImGui::SliderInt("Bump Mode", &bumpMode, 0, 3);
         }
         ImGui::End();
 
