@@ -9,6 +9,7 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
+#include "stb_image.h"
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
@@ -441,7 +442,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         model = glm::scale(model, glm::vec3(0.3f)); 
 
         push_constants.worldMatrix = projection * view;
-        push_constants.modelMatrix = model;
+        push_constants.modelMatrix = model; 
         push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
         push_constants.vertexBuffer = testMeshes[1]->meshBuffers.vertexBufferAddress; // sphere mesh at index 1. buffer memory contains multiple meshes
 
@@ -449,6 +450,32 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         vkCmdBindIndexBuffer(cmd, testMeshes[1]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, testMeshes[1]->surfaces[0].count, 1, testMeshes[1]->surfaces[0].startIndex, 0, 0);
     }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
+
+    // bind cubemap descriptor set
+    VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
+    {
+        DescriptorWriter writer;
+        writer.write_image(0, _cubeMap.imageView, _defaultSamplerLinear,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.update_set(_device, skyboxDset);
+    }
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &skyboxDset, 0, nullptr);
+
+    // push constants
+    SkyboxPushConstants skyboxPush;
+    glm::mat4 skyboxView = mainCamera.getViewMatrix();
+    skyboxView = glm::mat4(glm::mat3(skyboxView)); // use only rotation, discard translation from camera
+    glm::mat4 projectionM = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
+    projectionM[1][1] *= -1;
+
+    skyboxPush.viewProj = projectionM * skyboxView;
+    skyboxPush.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress;  // Cube mesh
+
+    vkCmdPushConstants(cmd, _skyboxPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(SkyboxPushConstants), &skyboxPush);
+    vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
 
     vkCmdEndRendering(cmd);
 
@@ -984,6 +1011,13 @@ void VulkanEngine::init_descriptors()
         _pbrMaterialDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
+    // Add to your existing descriptor layout (or create new one for skybox)
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // Cubemap
+        _cubeMapDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
+    }
+
     //make sure both the descriptor allocator and the new layout get cleaned up properly
     _mainDeletionQueue.push_function([&]() {
         globalDescriptorAllocator.destroy_pool(_device);
@@ -991,6 +1025,7 @@ void VulkanEngine::init_descriptors()
         vkDestroyDescriptorSetLayout(_device, _gpuSceneDataDescriptorLayout, nullptr); 
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _pbrMaterialDescriptorLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _cubeMapDescriptorLayout, nullptr);
         });
 
 
@@ -1021,6 +1056,7 @@ void VulkanEngine::init_pipelines()
     init_background_pipelines();
     init_mesh_pipeline();
     init_sphere_pipeline();
+    init_skybox_pipeline();
 }
 
 void VulkanEngine::init_background_pipelines()
@@ -1252,6 +1288,67 @@ void VulkanEngine::init_sphere_pipeline()
         });
 }
 
+void VulkanEngine::init_skybox_pipeline()
+{
+    // Load shaders
+    VkShaderModule skyboxFragShader;
+    if (!vkutil::load_shader_module("../../shaders/skybox.frag.spv", _device, &skyboxFragShader)) {
+        fmt::print("Error when building the skybox fragment shader module\n");
+    }
+    else {
+        fmt::print("Skybox fragment shader successfully loaded\n");
+    }
+
+    VkShaderModule skyboxVertexShader;
+    if (!vkutil::load_shader_module("../../shaders/skybox.vert.spv", _device, &skyboxVertexShader)) {
+        fmt::print("Error when building the skybox vertex shader module\n");
+    }
+    else {
+        fmt::print("Skybox vertex shader successfully loaded\n");
+    }
+
+    // Push constant for view-projection matrix + vertex buffer address
+    VkPushConstantRange bufferRange{};
+    bufferRange.offset = 0;
+    bufferRange.size = sizeof(SkyboxPushConstants);  // mat4 + address
+    bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    // Pipeline layout with cubemap descriptor set
+    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
+    pipeline_layout_info.pPushConstantRanges = &bufferRange;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pSetLayouts = &_cubeMapDescriptorLayout;
+    pipeline_layout_info.setLayoutCount = 1;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_skyboxPipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+
+    pipelineBuilder._pipelineLayout = _skyboxPipelineLayout;
+    pipelineBuilder.set_shaders(skyboxVertexShader, skyboxFragShader);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+
+    // Depth test enabled, depth write disabled
+    pipelineBuilder.enable_depthtest(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
+
+    pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(_depthImage.imageFormat);
+
+    _skyboxPipeline = pipelineBuilder.build_pipeline(_device);
+
+    vkDestroyShaderModule(_device, skyboxFragShader, nullptr);
+    vkDestroyShaderModule(_device, skyboxVertexShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipelineLayout(_device, _skyboxPipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _skyboxPipeline, nullptr);
+        });
+}
+
 void VulkanEngine::init_default_data()
 {
     // load some meshes
@@ -1298,25 +1395,34 @@ void VulkanEngine::init_default_data()
         //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
         //.heightMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_height.png", false)
 
-        //.albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
-        //.normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
-        //.metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
-        //.roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
-        //.aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
-        //.heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false),
-
-        .albedoMap = load_image_from_file(this, "..\\..\\assets\\toybox\\wood.png", false),
-        .normalMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_normal.png", false),
-        .metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
+        .albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
+        .normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
+        .metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
         .roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
-        .aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
-        .heightMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_disp.png", false)
+        .aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
+        .heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false),
 
-
+        //.albedoMap = load_image_from_file(this, "..\\..\\assets\\toybox\\wood.png", false),
+        //.normalMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_normal.png", false),
+        //.metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
+        //.roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
+        //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
+        //.heightMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_disp.png", false)
 
     };
 
 
+
+    std::string cubemapPaths[6] = {
+        "../../assets/fireplaceroom/px.png",
+        "../../assets/fireplaceroom/nx.png",
+        "../../assets/fireplaceroom/py.png",
+        "../../assets/fireplaceroom/ny.png",
+        "../../assets/fireplaceroom/pz.png",
+        "../../assets/fireplaceroom/nz.png"
+    };
+
+    _cubeMap = load_cubemap_from_files(this, cubemapPaths);
 
 
     // leave all params as default for samplers besides min/maag filters
@@ -1351,11 +1457,13 @@ void VulkanEngine::init_default_data()
         destroy_image(_pbrMatImages.roughnessMap);
         destroy_image(_pbrMatImages.aoMap);
         destroy_image(_pbrMatImages.heightMap);
+
+        destroy_image(_cubeMap);
         });
 
 }
 
-// create a draw image
+// creates blank image on gpu, other create image function writes into it
 AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
 {
     AllocatedImage newImage;
@@ -1391,7 +1499,7 @@ AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkIm
     return newImage;
 }
 
-// to write image data
+// to create image, upload data into it, and upload into gpu
 AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
 {
     size_t data_size = size.depth * size.width * size.height * 4;
@@ -1404,7 +1512,7 @@ AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat 
     // flags to allow copy data into and from
     AllocatedImage new_image = create_image(size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipmapped);
 
-    // copy staging buffer pixel data into the image
+    // copy staging buffer pixel data into the GPU image
     immediate_submit([&](VkCommandBuffer cmd) {
         vkutil::transition_image(cmd, new_image.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
@@ -1431,6 +1539,68 @@ AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat 
     destroy_buffer(uploadbuffer);
 
     return new_image;
+}
+
+AllocatedImage VulkanEngine::create_cubemap(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage)
+{
+    AllocatedImage newImage;
+    newImage.imageFormat = format;
+    newImage.imageExtent = size;
+
+    // Create cubemap image with 6 layers
+    VkImageCreateInfo img_info = vkinit::image_create_info(format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT, size);
+    img_info.arrayLayers = 6;
+    img_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT; 
+
+    VmaAllocationCreateInfo allocinfo = {};
+    allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    VK_CHECK(vmaCreateImage(_allocator, &img_info, &allocinfo, &newImage.image, &newImage.allocation, nullptr));
+
+    // Create cubemap view
+    VkImageViewCreateInfo view_info = vkinit::imageview_create_info(format, newImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE; 
+    view_info.subresourceRange.layerCount = 6;
+
+    VK_CHECK(vkCreateImageView(_device, &view_info, nullptr, &newImage.imageView));
+
+    // Upload data for each face
+    size_t face_size = size.width * size.height * 4; // Assuming RGBA
+    size_t total_size = face_size * 6;
+
+    AllocatedBuffer uploadBuffer = create_buffer(total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    // Copy all 6 faces into staging buffer
+    for (int i = 0; i < 6; i++) {
+        memcpy((char*)uploadBuffer.info.pMappedData + (face_size * i), data[i], face_size);
+    }
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        // Copy each face
+        for (int i = 0; i < 6; i++) {
+            VkBufferImageCopy copyRegion = {};
+            copyRegion.bufferOffset = face_size * i;
+            copyRegion.bufferRowLength = 0;
+            copyRegion.bufferImageHeight = 0;
+            copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copyRegion.imageSubresource.mipLevel = 0;
+            copyRegion.imageSubresource.baseArrayLayer = i; // Different layer for each face
+            copyRegion.imageSubresource.layerCount = 1;
+            copyRegion.imageExtent = size;
+
+            vkCmdCopyBufferToImage(cmd, uploadBuffer.buffer, newImage.image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+        }
+
+        vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        });
+
+    destroy_buffer(uploadBuffer);
+    return newImage;
 }
 
 void VulkanEngine::destroy_image(const AllocatedImage& img)

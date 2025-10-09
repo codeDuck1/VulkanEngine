@@ -220,6 +220,40 @@ AllocatedImage load_image_from_file(VulkanEngine* engine, std::filesystem::path 
     return image;
 }
 
+AllocatedImage load_cubemap_from_files(VulkanEngine* engine, std::string paths[6])
+{
+    // Load all 6 faces using stbi_load
+    void* cubemapData[6];
+    int width, height, channels;
+
+    for (int i = 0; i < 6; i++) {
+        cubemapData[i] = stbi_load(paths[i].c_str(), &width, &height, &channels, STBI_rgb_alpha);
+
+        if (!cubemapData[i]) {
+            fmt::print("Failed to load cubemap face: {}\n", paths[i]);
+        }
+    }
+
+    VkExtent3D imageSize = { (uint32_t)width, (uint32_t)height, 1 };
+
+    // Use the create_cubemap function that creates 1 VkImage with 6 layers
+    AllocatedImage cubemap = engine->create_cubemap(
+        cubemapData,
+        imageSize,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_IMAGE_USAGE_SAMPLED_BIT
+    );
+
+    // Free the pixel data
+    for (int i = 0; i < 6; i++) {
+        if (cubemapData[i]) {
+            stbi_image_free(cubemapData[i]);
+        }
+    }
+
+    return cubemap;
+}
+
 
 
 

@@ -32,4 +32,5 @@ class VulkanEngine;
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngine* engine, std::filesystem::path filePath);
 
 AllocatedImage load_image_from_file(VulkanEngine* engine, std::filesystem::path filePath, bool mipmapped);
+AllocatedImage load_cubemap_from_files(VulkanEngine* engine, std::string paths[6]);
 

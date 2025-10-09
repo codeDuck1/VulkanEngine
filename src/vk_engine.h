@@ -126,6 +126,9 @@ public:
 	AllocatedImage _greyImage;
 	AllocatedImage _errorCheckerboardImage;
 
+	AllocatedImage _cubeMap;
+	VkDescriptorSetLayout _cubeMapDescriptorLayout;
+
 	// holds texture images
 	PBRMaterialProperties _pbrMatImages;
 	VkDescriptorSetLayout _pbrMaterialDescriptorLayout;
@@ -169,6 +172,9 @@ public:
 	VkPipelineLayout _spherePipelineLayout;
 	VkPipeline _spherePipeline;
 
+	VkPipelineLayout _skyboxPipelineLayout;
+	VkPipeline _skyboxPipeline;
+
 	// meshes!
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 
@@ -201,6 +207,7 @@ public:
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
+	AllocatedImage create_cubemap(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage);
 	//run main loop
 	void run();
 
@@ -231,6 +238,7 @@ private:
 	void init_imgui();
 	void init_mesh_pipeline();
 	void init_sphere_pipeline();
+	void init_skybox_pipeline();
 
 	void init_default_data();
 

@@ -91,6 +91,36 @@ struct Vertex {
 };
 #pragma pack(pop)
 
+// DATA FLOW:
+//init_default_data()
+//    ↓
+//testMeshes = loadGltfMeshes(this, "basicmesh.glb")
+//    ↓
+//loadGltfMeshes() - reads file
+//    ↓
+//    For each mesh in file:
+//        ↓
+//        Extract vertices & indices
+//        ↓
+//        gpuBuffers = engine->uploadMesh(indices, vertices)
+//            ↓
+//            create_buffer() → Creates VkBuffer
+//            ↓
+//            vkGetBufferDeviceAddress() → Gets GPU address for THIS buffer
+//            ↓
+//            Return GPUMeshBuffers{ vertexBuffer, indexBuffer, vertexBufferAddress }
+//        ↓
+//        mesh->meshBuffers = gpuBuffers  // Store it!
+//        ↓
+//        meshes.push_back(mesh)
+//    ↓
+//    Return vector of MeshAssets (each has its own GPU address!)
+//    ↓
+//testMeshes[0]->meshBuffers.vertexBufferAddress = 0x123456789...  // Monkey mesh
+//testMeshes[1]->meshBuffers.vertexBufferAddress = 0x987654321...  // Sphere mesh
+//testMeshes[2]->meshBuffers.vertexBufferAddress = 0xABCDEF000...  // Cube mesh
+ 
+
 // holds the resources needed for a mesh
 struct GPUMeshBuffers {
 
@@ -104,6 +134,11 @@ struct GPUDrawPushConstants {
 	glm::mat4 worldMatrix;
 	glm::mat4 modelMatrix;
 	glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
+	VkDeviceAddress vertexBuffer;
+};
+
+struct SkyboxPushConstants {
+	glm::mat4 viewProj;
 	VkDeviceAddress vertexBuffer;
 };
 
