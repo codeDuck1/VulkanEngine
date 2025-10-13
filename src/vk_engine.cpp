@@ -368,17 +368,17 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     VkDescriptorSet pbrMaterialSet = get_current_frame()._frameDescriptors.allocate(_device, _pbrMaterialDescriptorLayout);
     // Write all PBR textures
     DescriptorWriter writer;
-    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSamplerNearest,
+    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSamplerNearest,
+    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSamplerNearest,
+    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSamplerNearest,
+    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerNearest,
+    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSamplerNearest,
+    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, pbrMaterialSet);
 
@@ -390,7 +390,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     // draw monkey
     glm::mat4 model = glm::mat4(1.0f);
     rotAngle += _deltaTime * glm::radians(60.0f);
-    model = glm::rotate(model, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+    //model = glm::rotate(model, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 
     glm::mat4 view = mainCamera.getViewMatrix();
     // camera projection
@@ -1395,19 +1395,19 @@ void VulkanEngine::init_default_data()
         //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
         //.heightMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_height.png", false)
 
-        .albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
-        .normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
-        .metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
-        .roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
-        .aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
-        .heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false),
-
-        //.albedoMap = load_image_from_file(this, "..\\..\\assets\\toybox\\wood.png", false),
-        //.normalMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_normal.png", false),
-        //.metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
+        //.albedoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-albedo.png", false),
+        //.normalMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-normal-ogl.png", false),
+        //.metallicMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-metallic.png", false),
         //.roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
-        //.aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
-        //.heightMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_disp.png", false)
+        //.aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
+        //.heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false),
+
+        .albedoMap = load_image_from_file(this, "..\\..\\assets\\toybox\\wood.png", false),
+        .normalMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_normal.png", false),
+        .metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
+        .roughnessMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-roughness.png", false),
+        .aoMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_ao.png", false),
+        .heightMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_disp.png", false)
 
     };
 

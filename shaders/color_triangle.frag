@@ -120,6 +120,47 @@ vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
     return finalTexCoords;
 }
 
+float SelfShadowing(vec2 offsetCoords, vec3 lightDir)
+{
+    int layers = 128;
+
+    // if light is behind surface, in shadow
+    if(lightDir.z <= 0.0)
+    {
+        return 0.0;
+    }
+
+    float layerDepth = 1.0 / layers;
+    // project 3d light direct onto 2d surface
+    vec2 p = lightDir.xy / lightDir.z * bump.heightScale; 
+    vec2 stepVector = p / layers; // how much to move uv coords each iterationso
+
+    vec2 currentTexCoords = offsetCoords;
+    float currentDepthMapValue = texture(heightMap, currentTexCoords).r;
+
+    // start ray at height defined by heightmap
+    float currentLayerDepth = currentDepthMapValue;
+
+    float shadowBias = 0.03; // avoid shadowing very small height changes
+
+    int maxIterations = 128;
+    int iterationCount = 0;
+
+    while (currentLayerDepth <= currentDepthMapValue + shadowBias && currentLayerDepth > 0.0 && iterationCount < maxIterations)
+    {
+        
+        currentTexCoords += stepVector;
+        currentDepthMapValue = texture(heightMap, currentTexCoords).r;
+        currentLayerDepth -= layerDepth;
+        iterationCount++;
+    }
+
+    // if we go above surface, smth blocked us. 
+    // (we passed through heightmap if currentLayerDepth > currentDepthMapValue)
+    return currentLayerDepth > currentDepthMapValue ? 0.0 : 1.0;
+
+}
+
 
 void main() 
 {
@@ -170,12 +211,22 @@ void main()
     F0 = mix(F0, albedo, metallic);
     
     vec3 Lo = vec3(0.0);
-    for(int i = 0; i < 4; ++i) 
+    for(int i = 0; i < 1; ++i) 
     {
         // Transform light position to tangent space
         vec3 lightPosTangent = tbnMatrix * lightPositions[i];
+
+       
         
         vec3 L = normalize(lightPosTangent - WorldPos);
+
+         // SELF-SHADOWING
+        float shadow = 1.0;
+        if(bump.bumpMode == 0 || bump.bumpMode == 1) // Only when parallax is enabled
+        {
+            shadow = SelfShadowing(preUVs, L);
+        }
+
         vec3 H = normalize(V + L);
         float distance = length(lightPosTangent - WorldPos);
         float attenuation = 1.0 / (distance * distance);
@@ -196,7 +247,7 @@ void main()
             
         // add to outgoing radiance Lo
         float NdotL = max(dot(N, L), 0.0);                
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL; 
+        Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow; 
     }   
   
     vec3 ambient = vec3(0.03) * albedo * ao;
