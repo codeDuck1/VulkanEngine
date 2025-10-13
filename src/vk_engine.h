@@ -208,6 +208,7 @@ public:
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
 	AllocatedImage create_cubemap(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage);
+	AllocatedImage create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage);
 	//run main loop
 	void run();
 

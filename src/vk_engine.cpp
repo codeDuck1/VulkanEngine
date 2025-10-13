@@ -1413,17 +1413,26 @@ void VulkanEngine::init_default_data()
 
 
 
-    std::string cubemapPaths[6] = {
-        "../../assets/fireplaceroom/px.png",
-        "../../assets/fireplaceroom/nx.png",
-        "../../assets/fireplaceroom/py.png",
-        "../../assets/fireplaceroom/ny.png",
-        "../../assets/fireplaceroom/pz.png",
-        "../../assets/fireplaceroom/nz.png"
+    //std::string cubemapPaths[6] = {
+    //    "../../assets/fireplaceroom/px.png",
+    //    "../../assets/fireplaceroom/nx.png",
+    //    "../../assets/fireplaceroom/py.png",
+    //    "../../assets/fireplaceroom/ny.png",
+    //    "../../assets/fireplaceroom/pz.png",
+    //    "../../assets/fireplaceroom/nz.png"
+    //};
+
+    std::string cubemapPathsHDR[6] = {
+    "../../assets/fireplaceroomHDR/px.hdr",
+    "../../assets/fireplaceroomHDR/nx.hdr",
+    "../../assets/fireplaceroomHDR/py.hdr",
+    "../../assets/fireplaceroomHDR/ny.hdr",
+    "../../assets/fireplaceroomHDR/pz.hdr",
+    "../../assets/fireplaceroomHDR/nz.hdr"
     };
 
-    _cubeMap = load_cubemap_from_files(this, cubemapPaths);
-
+    //_cubeMap = load_cubemap_from_files(this, cubemapPaths);
+    _cubeMap = load_cubemap_from_files_hdr(this, cubemapPathsHDR);
 
     // leave all params as default for samplers besides min/maag filters
     VkSamplerCreateInfo sampl = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
@@ -1602,6 +1611,74 @@ AllocatedImage VulkanEngine::create_cubemap(void* data[6], VkExtent3D size, VkFo
     destroy_buffer(uploadBuffer);
     return newImage;
 }
+
+AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage)
+{
+    AllocatedImage newImage;
+    newImage.imageFormat = format;
+    newImage.imageExtent = size;
+
+    // Create cubemap image with 6 layers
+    VkImageCreateInfo img_info = vkinit::image_create_info(format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT, size);
+    img_info.arrayLayers = 6;
+    img_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+    VmaAllocationCreateInfo allocinfo = {};
+    allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    VK_CHECK(vmaCreateImage(_allocator, &img_info, &allocinfo, &newImage.image, &newImage.allocation, nullptr));
+
+    // Create cubemap image view
+    VkImageViewCreateInfo view_info = vkinit::imageview_create_info(format, newImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+    view_info.subresourceRange.layerCount = 6;
+
+    VK_CHECK(vkCreateImageView(_device, &view_info, nullptr, &newImage.imageView));
+
+    // HDR format: 4 channels × 4 bytes (32-bit float per channel)
+    // thus 16 bytes per pixel for rgba
+    size_t bytes_per_pixel = 16; 
+
+    size_t face_size = size.width * size.height * bytes_per_pixel;
+    size_t total_size = face_size * 6;
+
+    AllocatedBuffer uploadBuffer = create_buffer(total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    // Copy all 6 faces into staging buffer
+    for (int i = 0; i < 6; i++) {
+        memcpy((char*)uploadBuffer.info.pMappedData + (face_size * i), data[i], face_size);
+    }
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        // Copy each face
+        for (int i = 0; i < 6; i++) {
+            VkBufferImageCopy copyRegion = {};
+            copyRegion.bufferOffset = face_size * i;
+            copyRegion.bufferRowLength = 0;
+            copyRegion.bufferImageHeight = 0;
+            copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copyRegion.imageSubresource.mipLevel = 0;
+            copyRegion.imageSubresource.baseArrayLayer = i; // Different layer for each face
+            copyRegion.imageSubresource.layerCount = 1;
+            copyRegion.imageExtent = size;
+
+            vkCmdCopyBufferToImage(cmd, uploadBuffer.buffer, newImage.image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+        }
+
+        vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        });
+
+    destroy_buffer(uploadBuffer);
+
+    return newImage;
+}
+
+
 
 void VulkanEngine::destroy_image(const AllocatedImage& img)
 {
