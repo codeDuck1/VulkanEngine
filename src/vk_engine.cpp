@@ -453,11 +453,21 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
 
+
+    VkImageView skybox;
+    if (enviromentMapMode == 0)
+    {
+        skybox = _cubeMap.imageView;
+    }
+    else 
+    {
+        skybox = _testCubemap.imageView;
+    }
     // bind cubemap descriptor set
     VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
     {
         DescriptorWriter writer;
-        writer.write_image(0, _cubeMap.imageView, _defaultSamplerLinear,
+        writer.write_image(0, skybox, _defaultSamplerLinear,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         writer.update_set(_device, skyboxDset);
     }
@@ -564,6 +574,7 @@ void VulkanEngine::run()
             ImGui::SliderFloat("Height Scale", &heightScale, 0.01f, 0.5f);
             ImGui::SliderInt("Num Layers", &numLayers, 1, 32);
             ImGui::SliderInt("Bump Mode", &bumpMode, 0, 3);
+            ImGui::SliderInt("Enviroment/Irradiance Map", &enviromentMapMode, 0, 1);
         }
         ImGui::End();
 
@@ -1057,6 +1068,7 @@ void VulkanEngine::init_pipelines()
     init_mesh_pipeline();
     init_sphere_pipeline();
     init_skybox_pipeline();
+    init_cubemap_compute_pipeline();
 }
 
 void VulkanEngine::init_background_pipelines()
@@ -1288,6 +1300,60 @@ void VulkanEngine::init_sphere_pipeline()
         });
 }
 
+void VulkanEngine::init_cubemap_compute_pipeline()
+{
+    // Load the compute shader
+    VkShaderModule testShader;
+    if (!vkutil::load_shader_module("../../shaders/cubemap.comp.spv", _device, &testShader)) {
+        fmt::print("Error loading test cubemap shader\n");
+        return;
+    }
+
+    // Create descriptor set layout - just one storage image binding
+    DescriptorLayoutBuilder layoutBuilder;
+    layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  // input cubemap
+    layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+
+    _testCubemapDescLayout = layoutBuilder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    // Create pipeline layout with push constants for the face index
+    VkPushConstantRange pushConstant{};
+    pushConstant.offset = 0;
+    pushConstant.size = sizeof(uint32_t);  // Just the face index (0-5)
+    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+    layoutInfo.pSetLayouts = &_testCubemapDescLayout;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pPushConstantRanges = &pushConstant;
+    layoutInfo.pushConstantRangeCount = 1;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_testCubemapPipelineLayout));
+
+    // Create the compute pipeline
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = testShader;
+    stageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout = _testCubemapPipelineLayout;
+    pipelineInfo.stage = stageInfo;
+
+    VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &_testCubemapPipeline));
+
+    // cleanup
+    vkDestroyShaderModule(_device, testShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipeline(_device, _testCubemapPipeline, nullptr);
+        vkDestroyPipelineLayout(_device, _testCubemapPipelineLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _testCubemapDescLayout, nullptr);
+        });
+}
+
 void VulkanEngine::init_skybox_pipeline()
 {
     // Load shaders
@@ -1440,15 +1506,17 @@ void VulkanEngine::init_default_data()
     sampl.magFilter = VK_FILTER_NEAREST;
     sampl.minFilter = VK_FILTER_NEAREST;
 
-    //sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
-    //sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
-    //sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
+    sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
+    sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
+    sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
 
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerNearest);
 
     sampl.magFilter = VK_FILTER_LINEAR;
     sampl.minFilter = VK_FILTER_LINEAR;
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinear);
+
+    generate_test_cubemap();
 
     _mainDeletionQueue.push_function([&]() {
         vkDestroySampler(_device, _defaultSamplerNearest, nullptr);
@@ -1612,7 +1680,7 @@ AllocatedImage VulkanEngine::create_cubemap(void* data[6], VkExtent3D size, VkFo
     return newImage;
 }
 
-AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage)
+AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
 {
     AllocatedImage newImage;
     newImage.imageFormat = format;
@@ -1622,6 +1690,10 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     VkImageCreateInfo img_info = vkinit::image_create_info(format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT, size);
     img_info.arrayLayers = 6;
     img_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    
+    if (mipmapped) { // dont need specify 1, bc image_crinfo defaults to 1
+        img_info.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+    }
 
     VmaAllocationCreateInfo allocinfo = {};
     allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -1676,6 +1748,127 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     destroy_buffer(uploadBuffer);
 
     return newImage;
+}
+
+AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat format, bool mipmapped)
+{
+    AllocatedImage newImage;
+    newImage.imageFormat = format;
+    newImage.imageExtent = size;
+
+    // create cubemap image
+    VkImageCreateInfo img_info = vkinit::image_create_info(
+        format,
+        VK_IMAGE_USAGE_STORAGE_BIT |           // Can write to it in compute shader
+        VK_IMAGE_USAGE_SAMPLED_BIT |           // Can sample from it
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT |      // Can copy from it
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT,       // Can copy to it
+        size
+    );
+
+    // settings to make into cube map
+    img_info.arrayLayers = 6;
+    // IMAGE CAN BE VIEWED BOTH AS CUBEMAP AND AS A 2D ARRAY!
+    img_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+    // Calculate mip levels if needed
+    if (mipmapped) {
+        img_info.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+    }
+
+    // Allocate on GPU
+    VmaAllocationCreateInfo allocinfo = {};
+    allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VK_CHECK(vmaCreateImage(_allocator, &img_info, &allocinfo, &newImage.image, &newImage.allocation, nullptr));
+
+    // Create the image view as a CUBEMAP
+    VkImageViewCreateInfo view_info = vkinit::imageview_create_info(format, newImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+    view_info.subresourceRange.layerCount = 6;
+    view_info.subresourceRange.levelCount = img_info.mipLevels;
+
+    VK_CHECK(vkCreateImageView(_device, &view_info, nullptr, &newImage.imageView));
+
+    return newImage;
+}
+
+// In vk_engine.cpp, add this function
+void VulkanEngine::generate_test_cubemap()
+{
+    fmt::print("Generating test cubemap...\n");
+
+    VkExtent3D size = { 32 , 32, 1 };
+    _testCubemap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, 1);
+
+    // Create a single 2D array view instead of 6 separate 2D views
+    VkImageViewCreateInfo arrayViewInfo = vkinit::imageview_create_info(
+        _testCubemap.imageFormat,
+        _testCubemap.image,
+        VK_IMAGE_ASPECT_COLOR_BIT
+    );
+    arrayViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY; 
+    arrayViewInfo.subresourceRange.baseArrayLayer = 0;
+    arrayViewInfo.subresourceRange.layerCount = 6;  // All 6 faces
+    arrayViewInfo.subresourceRange.levelCount = 1;
+
+    // contains cubemap image, view for accessing 
+    VkImageView arrayView;
+    VK_CHECK(vkCreateImageView(_device, &arrayViewInfo, nullptr, &arrayView));
+
+    // dispatch compute shader
+    immediate_submit([&](VkCommandBuffer cmd) {
+        vkutil::transition_image(cmd, _testCubemap.image,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_GENERAL);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _testCubemapPipeline);
+
+        // Allocate descriptor set ONCE
+        VkDescriptorSet descSet = get_current_frame()._frameDescriptors.allocate(_device, _testCubemapDescLayout);
+
+        // Bind the 2D array image view
+        DescriptorWriter writer;
+
+        // Binding 0: INPUT cubemap for sampling (HDR environment map)
+        writer.write_image(0, _cubeMap.imageView, _defaultSamplerLinear,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+        // Binding 1: OUTPUT 2D array for writing
+        writer.write_image(1, arrayView, VK_NULL_HANDLE,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+
+        writer.update_set(_device, descSet);
+        writer.update_set(_device, descSet);
+
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+            _testCubemapPipelineLayout, 0, 1, &descSet, 0, nullptr);
+
+        // Render each face with the same descriptor set
+        for (uint32_t face = 0; face < 6; face++) {
+            // Push the face index
+            vkCmdPushConstants(cmd, _testCubemapPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                0, sizeof(uint32_t), &face);
+
+            // Dispatch compute shader
+            vkCmdDispatch(cmd, (size.width + 15) / 16, (size.height + 15) / 16, 1);
+        }
+
+        vkutil::transition_image(cmd, _testCubemap.image,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        });
+
+    // Clean up array view
+    vkDestroyImageView(_device, arrayView, nullptr);
+
+    fmt::print("Test cubemap generated successfully\n");
+
+    _mainDeletionQueue.push_function([&]() {
+        destroy_image(_testCubemap);
+        });
 }
 
 

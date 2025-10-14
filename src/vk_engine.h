@@ -129,6 +129,12 @@ public:
 	AllocatedImage _cubeMap;
 	VkDescriptorSetLayout _cubeMapDescriptorLayout;
 
+	// for read/write convolution cubemap
+	AllocatedImage _testCubemap;  
+	VkPipeline _testCubemapPipeline;
+	VkPipelineLayout _testCubemapPipelineLayout;
+	VkDescriptorSetLayout _testCubemapDescLayout;
+
 	// holds texture images
 	PBRMaterialProperties _pbrMatImages;
 	VkDescriptorSetLayout _pbrMaterialDescriptorLayout;
@@ -165,6 +171,7 @@ public:
 	float heightScale{ 0.1f };
 	int numLayers{ 32 };
 	int bumpMode{ 0 };
+	int enviromentMapMode{ 0 };
 
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
@@ -208,7 +215,12 @@ public:
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
 	AllocatedImage create_cubemap(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage);
-	AllocatedImage create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage);
+	AllocatedImage create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+	void generate_test_cubemap();
+
+	// used for convoluting base cubemap
+	AllocatedImage create_read_write_cubemap(VkExtent3D size, VkFormat format, bool mipmapped);
+
 	//run main loop
 	void run();
 
@@ -240,6 +252,7 @@ private:
 	void init_mesh_pipeline();
 	void init_sphere_pipeline();
 	void init_skybox_pipeline();
+	void init_cubemap_compute_pipeline();
 
 	void init_default_data();
 

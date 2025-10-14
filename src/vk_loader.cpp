@@ -279,7 +279,8 @@ AllocatedImage load_cubemap_from_files_hdr(VulkanEngine* engine, std::string pat
         cubemapDataVoid,
         imageSize,
         VK_FORMAT_R32G32B32A32_SFLOAT,  // 32-bit float HDR format
-        VK_IMAGE_USAGE_SAMPLED_BIT
+        VK_IMAGE_USAGE_SAMPLED_BIT,
+        true
     );
 
     for (int i = 0; i < 6; i++) {

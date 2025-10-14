@@ -1,0 +1,84 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(set = 0, binding = 0) uniform samplerCube environmentMap;
+layout(set = 0, binding = 1, rgba16f) uniform image2DArray irradianceMap;
+
+layout(push_constant) uniform PushConstants {
+    uint face;
+} pc;
+
+const float PI = 3.14159265359;
+
+vec3 getFaceDirection(uint face, vec2 uv) {
+    vec2 coord = uv * 2.0 - 1.0;
+    
+    switch(face) {
+        case 0: return normalize(vec3(1.0, -coord.y, -coord.x));
+        case 1: return normalize(vec3(-1.0, -coord.y, coord.x));
+        case 2: return normalize(vec3(coord.x, 1.0, coord.y));
+        case 3: return normalize(vec3(coord.x, -1.0, -coord.y));
+        case 4: return normalize(vec3(coord.x, -coord.y, 1.0));
+        case 5: return normalize(vec3(-coord.x, -coord.y, -1.0));
+    }
+    return vec3(0.0, 0.0, 1.0);
+}
+
+
+// For each texel in the irradiance cubemap:
+// 1. Determine its normal direction.
+// 2. Construct a hemisphere centered on that normal.
+// 3. Sample the environment map over the hemisphere.
+// 4. Average the samples, weighted for diffuse irradiance (samples closer to normal contribute more thus cos weighting)
+
+void main() {
+    ivec2 texSize = imageSize(irradianceMap).xy;
+    ivec2 texCoord = ivec2(gl_GlobalInvocationID.xy); // individual thread in entire dispatch grid
+    
+    if(texCoord.x >= texSize.x || texCoord.y >= texSize.y) {
+        return;
+    }
+    
+    vec2 uv = (vec2(texCoord) + 0.5) / vec2(texSize);
+    vec3 normal = getFaceDirection(pc.face, uv);
+    
+    vec3 irradiance = vec3(0.0);
+    
+    // Construct tangent space basis, LearnOpenGL method
+    vec3 up = vec3(0.0, 1.0, 0.0);
+    vec3 right = normalize(cross(up, normal));
+    up = normalize(cross(normal, right));
+    
+    float sampleDelta = 0.01;
+    float nrSamples = 0.0;
+    
+    for(float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta)
+    {
+        for(float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta)
+        {
+            // Spherical to cartesian (in tangent space)
+            vec3 tangentSample = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
+            
+            // Tangent space to world
+            vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * normal;
+            
+            // sample enviroment map around hemisphere
+            
+            vec3 Li = texture(environmentMap, sampleVec).rgb;
+
+            // for when mipmaps setup
+            // vec3 Li = textureLod(environmentMap, sampleVec, 4.0).rgb;
+
+            // Clamp extreme HDR values from fireplace
+            Li = min(Li, vec3(100.0));
+            
+            // scale by cos and sin to account for light weaker at larger angles and smaller sample areas
+            // in higher hemisphere areas
+            irradiance += Li * cos(theta) * sin(theta);
+            nrSamples++;
+        }
+    }
+    
+    irradiance = PI * irradiance * (1.0 / nrSamples);
+    
+    imageStore(irradianceMap, ivec3(texCoord, pc.face), vec4(irradiance, 1.0));
+}

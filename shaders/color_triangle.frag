@@ -237,9 +237,10 @@ void main()
         float G   = GeometrySmith(N, V, L, roughness);      
         vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);       
         
+        // fresnel to give us fraction of light reflected as specular
         vec3 kS = F;
         vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;	  
+        kD *= 1.0 - metallic;	  // the rest is diffuse, scattered
         
         vec3 numerator    = NDF * G * F;
         float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
