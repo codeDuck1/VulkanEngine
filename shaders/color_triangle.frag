@@ -8,6 +8,8 @@ layout(set = 0, binding = 3) uniform sampler2D roughnessMap;
 layout(set = 0, binding = 4) uniform sampler2D aoMap;
 layout(set = 0, binding = 5) uniform sampler2D heightMap;
 
+layout(set = 1, binding = 0) uniform samplerCube irradianceMap;
+
 //shader input
 layout (location = 0) in vec3 inColor;
 layout (location = 1) in vec2 inUVs; // uvs and texcoord same
@@ -83,6 +85,11 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
+
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}  
 
 vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
 { 
@@ -194,8 +201,8 @@ void main()
     vec3 N;
     if(bump.bumpMode == 0 || bump.bumpMode == 2)
     {
-        N = texture(normalMap, preUVs).rgb;
-        N = normalize(N * 2.0 - 1.0);
+        N = texture(normalMap, preUVs).rgb; // Gets [0, 1] range
+        N = normalize(N * 2.0 - 1.0); // Converts to [-1, 1] range
     }
     if(bump.bumpMode == 1 || bump.bumpMode == 3)
     {
@@ -210,6 +217,7 @@ void main()
     vec3 F0 = vec3(0.04); 
     F0 = mix(F0, albedo, metallic);
     
+    // Lo accumulates only direct lighting, ambient added seperately
     vec3 Lo = vec3(0.0);
     for(int i = 0; i < 1; ++i) 
     {
@@ -227,7 +235,7 @@ void main()
             shadow = SelfShadowing(preUVs, L);
         }
 
-        vec3 H = normalize(V + L);
+        vec3 H = normalize(V + L); // halfway vec btw view direct and light direct
         float distance = length(lightPosTangent - WorldPos);
         float attenuation = 1.0 / (distance * distance);
         vec3 radiance     = lightColors[i] * attenuation;        
@@ -250,9 +258,22 @@ void main()
         float NdotL = max(dot(N, L), 0.0);                
         Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow; 
     }   
-  
-    vec3 ambient = vec3(0.03) * albedo * ao;
-    vec3 color = ambient + Lo;
+    
+
+    // use irradiance map for indirect diffuse 
+    //vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 worldNormal = normalize(transpose(tbnMatrix) * N); // Convert normal from tangent space to world space for cubemap sampling
+
+    // Fresnel for ambient (using view direction)
+    vec3 kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness); // NOTEE!!!!: why this one use roughness and other not?
+    vec3 kD = 1.0 - kS;
+    // Sample irradiance map using WORLD SPACE normal
+    vec3 irradiance = texture(irradianceMap, worldNormal).rgb;
+    vec3 diffuse = irradiance * albedo;
+    vec3 ambient = (kD * diffuse) * ao;
+
+
+    vec3 color = ambient + Lo; // total light = indirect + direct
 	
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0/2.2));  

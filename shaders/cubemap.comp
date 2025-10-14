@@ -69,7 +69,7 @@ void main() {
             // vec3 Li = textureLod(environmentMap, sampleVec, 4.0).rgb;
 
             // Clamp extreme HDR values from fireplace
-            Li = min(Li, vec3(100.0));
+            Li = min(Li, vec3(400.0));
             
             // scale by cos and sin to account for light weaker at larger angles and smaller sample areas
             // in higher hemisphere areas

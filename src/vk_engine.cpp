@@ -382,8 +382,16 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, pbrMaterialSet);
 
-    // Bind the descriptor set to slot 0
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 1, &pbrMaterialSet, 0, nullptr);
+    // Allocate and set up cubemap descriptor set
+    VkDescriptorSet cubemapSet = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
+    DescriptorWriter cubemapWriter;
+    cubemapWriter.write_image(0, _testCubemap.imageView, _defaultSamplerLinear,  // or whatever your cubemap is called
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    cubemapWriter.update_set(_device, cubemapSet);
+
+    // Bind both descriptor sets
+    VkDescriptorSet descriptorSets[] = { pbrMaterialSet, cubemapSet };
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 2, descriptorSets, 0, nullptr);
     // ----- END PBR DESCRIPTOR SET ------
 
     
@@ -423,7 +431,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     };
 
     // draw sphere at each light position
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 1; i++)
     {
         //bind a texture.
         // allocate new descriptor set
@@ -1022,7 +1030,6 @@ void VulkanEngine::init_descriptors()
         _pbrMaterialDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
-    // Add to your existing descriptor layout (or create new one for skybox)
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // Cubemap
@@ -1185,12 +1192,17 @@ void VulkanEngine::init_mesh_pipeline()
     bufferRanges[1].size = sizeof(BumpPushConstants);
     bufferRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+    VkDescriptorSetLayout setLayouts[] = {
+    _pbrMaterialDescriptorLayout,  // Set 0: PBR material textures
+    _cubeMapDescriptorLayout       // Set 1: Cubemap
+    };
+
     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
     pipeline_layout_info.pPushConstantRanges = bufferRanges;
     pipeline_layout_info.pushConstantRangeCount = 2;
     // ADDED DESCRIPTOR SET SUPPORT FOR TEXTURE!
-    pipeline_layout_info.pSetLayouts = &_pbrMaterialDescriptorLayout;  // layout for texture
-    pipeline_layout_info.setLayoutCount = 1; // num of descriptor sets
+    pipeline_layout_info.pSetLayouts = setLayouts;  
+    pipeline_layout_info.setLayoutCount = 2; // num of descriptor sets
     VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_meshPipelineLayout));
 
     PipelineBuilder pipelineBuilder;
