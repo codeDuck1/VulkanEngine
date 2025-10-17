@@ -1500,6 +1500,15 @@ void VulkanEngine::init_default_data()
     //    "../../assets/fireplaceroom/nz.png"
     //};
 
+    //std::string cubemapPathsHDR[6] = {
+    //"../../assets/nightskyHDR/px.hdr",
+    //"../../assets/nightskyHDR/nx.hdr",
+    //"../../assets/nightskyHDR/py.hdr",
+    //"../../assets/nightskyHDR/ny.hdr",
+    //"../../assets/nightskyHDR/pz.hdr",
+    //"../../assets/nightskyHDR/nz.hdr"
+    //};
+
     std::string cubemapPathsHDR[6] = {
     "../../assets/fireplaceroomHDR/px.hdr",
     "../../assets/fireplaceroomHDR/nx.hdr",
@@ -1518,9 +1527,13 @@ void VulkanEngine::init_default_data()
     sampl.magFilter = VK_FILTER_NEAREST;
     sampl.minFilter = VK_FILTER_NEAREST;
 
-    sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
-    sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
-    sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // Add this
+    //sampl.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;  // sharp transition between mips
+    //sampl.minLod = 0.0f;                          // minimum mip to sample        
+    //sampl.maxLod = VK_LOD_CLAMP_NONE;          // maximum mip to sample          
+
+    sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  
+    sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; 
+    sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  
 
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerNearest);
 
@@ -1561,7 +1574,8 @@ AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkIm
 
     VkImageCreateInfo img_info = vkinit::image_create_info(format, usage, size);
     if (mipmapped) {
-        img_info.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+        uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+        img_info.mipLevels = std::min(16u, mipLevels); // Cap at R32G32B32A32_SFLOAT limit
     }
 
     // always allocate images on dedicated GPU memory
@@ -1621,8 +1635,16 @@ AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat 
         vkCmdCopyBufferToImage(cmd, uploadbuffer.buffer, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
             &copyRegion);
 
-        vkutil::transition_image(cmd, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (mipmapped)
+        {
+            vkutil::generate_mipmaps(cmd, new_image.image, VkExtent2D{ new_image.imageExtent.width, new_image.imageExtent.height });
+        }
+        else
+        {
+            vkutil::transition_image(cmd, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
+
+
         });
 
     destroy_buffer(uploadbuffer);
@@ -1699,17 +1721,19 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     newImage.imageExtent = size;
 
     // Create cubemap image with 6 layers
-    VkImageCreateInfo img_info = vkinit::image_create_info(format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT, size);
+    VkImageCreateInfo img_info = vkinit::image_create_info(format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, size);
     img_info.arrayLayers = 6;
     img_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-    
-    if (mipmapped) { // dont need specify 1, bc image_crinfo defaults to 1
-        img_info.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
-    }
 
     VmaAllocationCreateInfo allocinfo = {};
     allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (mipmapped) {
+        uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+        img_info.mipLevels = mipLevels;
+        fmt::print("Mip levels: {}\n", mipLevels);
+    }
 
     VK_CHECK(vmaCreateImage(_allocator, &img_info, &allocinfo, &newImage.image, &newImage.allocation, nullptr));
 
@@ -1717,6 +1741,9 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     VkImageViewCreateInfo view_info = vkinit::imageview_create_info(format, newImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
     view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
     view_info.subresourceRange.layerCount = 6;
+
+    view_info.subresourceRange.baseMipLevel = 5;   // ← Start at mip 5
+    view_info.subresourceRange.levelCount = 1;     // ← Only 1 mip level visible
 
     VK_CHECK(vkCreateImageView(_device, &view_info, nullptr, &newImage.imageView));
 
@@ -1753,8 +1780,13 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
         }
 
-        vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // generate mipmaps if requested
+        if (mipmapped) {
+            vkutil::generate_cubemap_mipmaps(cmd, newImage.image, VkExtent2D{ size.width, size.height });
+        }
+        else {
+            vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
         });
 
     destroy_buffer(uploadBuffer);
@@ -1785,7 +1817,8 @@ AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat
 
     // Calculate mip levels if needed
     if (mipmapped) {
-        img_info.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+        uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+        img_info.mipLevels = std::min(16u, mipLevels); // Cap at R32G32B32A32_SFLOAT limit
     }
 
     // Allocate on GPU
@@ -1811,7 +1844,7 @@ void VulkanEngine::generate_test_cubemap()
     fmt::print("Generating test cubemap...\n");
 
     VkExtent3D size = { 32 , 32, 1 };
-    _testCubemap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, 1);
+    _testCubemap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);
 
     // Create a single 2D array view instead of 6 separate 2D views
     VkImageViewCreateInfo arrayViewInfo = vkinit::imageview_create_info(
@@ -1868,9 +1901,8 @@ void VulkanEngine::generate_test_cubemap()
             vkCmdDispatch(cmd, (size.width + 15) / 16, (size.height + 15) / 16, 1);
         }
 
-        vkutil::transition_image(cmd, _testCubemap.image,
-            VK_IMAGE_LAYOUT_GENERAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        vkutil::transition_image(cmd, _testCubemap.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+       
         });
 
     // Clean up array view

@@ -10,4 +10,6 @@ void main()
 {
     // sample cubemap using 3d direction
     outColor = texture(skybox, inTexCoordDir);
+
+    //outColor = textureLod(skybox, inTexCoordDir, 3.0);
 }
