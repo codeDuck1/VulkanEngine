@@ -368,24 +368,24 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     VkDescriptorSet pbrMaterialSet = get_current_frame()._frameDescriptors.allocate(_device, _pbrMaterialDescriptorLayout);
     // Write all PBR textures
     DescriptorWriter writer;
-    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSamplerLinear,
+    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSampleLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSamplerLinear,
+    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSampleLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSamplerLinear,
+    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSampleLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSamplerLinear,
+    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSampleLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerLinear,
+    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSampleLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSamplerLinear,
+    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSampleLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, pbrMaterialSet);
 
     // Allocate and set up cubemap descriptor set
     VkDescriptorSet cubemapSet = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
     DescriptorWriter cubemapWriter;
-    cubemapWriter.write_image(0, _testCubemap.imageView, _defaultSamplerLinear,  // or whatever your cubemap is called
+    cubemapWriter.write_image(0, _testCubemap.imageView, _defaultSampleLinear,  // or whatever your cubemap is called
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     cubemapWriter.update_set(_device, cubemapSet);
 
@@ -475,7 +475,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
     {
         DescriptorWriter writer;
-        writer.write_image(0, skybox, _defaultSamplerLinear,
+        writer.write_image(0, skybox, _defaultSamplerLinearMip,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         writer.update_set(_device, skyboxDset);
     }
@@ -1526,11 +1526,7 @@ void VulkanEngine::init_default_data()
 
     sampl.magFilter = VK_FILTER_NEAREST;
     sampl.minFilter = VK_FILTER_NEAREST;
-
-    //sampl.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;  // sharp transition between mips
-    //sampl.minLod = 0.0f;                          // minimum mip to sample        
-    //sampl.maxLod = VK_LOD_CLAMP_NONE;          // maximum mip to sample          
-
+    
     sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  
     sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; 
     sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  
@@ -1539,13 +1535,20 @@ void VulkanEngine::init_default_data()
 
     sampl.magFilter = VK_FILTER_LINEAR;
     sampl.minFilter = VK_FILTER_LINEAR;
-    vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinear);
+    vkCreateSampler(_device, &sampl, nullptr, &_defaultSampleLinear);
+
+
+    sampl.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;  // sharp transition between mips
+    sampl.minLod = 0.0f;                          // minimum mip to sample        
+    sampl.maxLod = 12.0f;          // maximum mip to sample      
+    vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinearMip); // mip enabled sampler
 
     generate_test_cubemap();
 
     _mainDeletionQueue.push_function([&]() {
         vkDestroySampler(_device, _defaultSamplerNearest, nullptr);
-        vkDestroySampler(_device, _defaultSamplerLinear, nullptr);
+        vkDestroySampler(_device, _defaultSampleLinear, nullptr);
+        vkDestroySampler(_device, _defaultSamplerLinearMip, nullptr);
 
         destroy_image(_whiteImage);
         destroy_image(_greyImage);
@@ -1742,8 +1745,11 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
     view_info.subresourceRange.layerCount = 6;
 
-    view_info.subresourceRange.baseMipLevel = 5;   // ← Start at mip 5
-    view_info.subresourceRange.levelCount = 1;     // ← Only 1 mip level visible
+    // hardcode mip testing
+    //view_info.subresourceRange.baseMipLevel = 5;   // tart at mip 5
+    //view_info.subresourceRange.levelCount = 1;     // Only 1 mip level visible
+    view_info.subresourceRange.baseMipLevel = 0;           // Start at mip 0
+    view_info.subresourceRange.levelCount = img_info.mipLevels;  // ALL mips visible
 
     VK_CHECK(vkCreateImageView(_device, &view_info, nullptr, &newImage.imageView));
 
@@ -1876,7 +1882,7 @@ void VulkanEngine::generate_test_cubemap()
         DescriptorWriter writer;
 
         // Binding 0: INPUT cubemap for sampling (HDR environment map)
-        writer.write_image(0, _cubeMap.imageView, _defaultSamplerLinear,
+        writer.write_image(0, _cubeMap.imageView, _defaultSamplerLinearMip,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 

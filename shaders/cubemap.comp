@@ -63,10 +63,10 @@ void main() {
             
             // sample enviroment map around hemisphere
             
-            vec3 Li = texture(environmentMap, sampleVec).rgb;
+            //vec3 Li = texture(environmentMap, sampleVec).rgb;
 
             // for when mipmaps setup
-            //vec3 Li = textureLod(environmentMap, sampleVec, 11.0).rgb;
+            vec3 Li = textureLod(environmentMap, sampleVec, 4.0).rgb;
 
             // Clamp extreme HDR values from fireplace
             Li = min(Li, vec3(400.0));

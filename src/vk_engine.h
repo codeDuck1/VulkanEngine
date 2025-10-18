@@ -139,8 +139,11 @@ public:
 	PBRMaterialProperties _pbrMatImages;
 	VkDescriptorSetLayout _pbrMaterialDescriptorLayout;
 
-	VkSampler _defaultSamplerLinear;
+	VkSampler _defaultSampleLinear;
 	VkSampler _defaultSamplerNearest;
+	// mip enabled sampler
+	VkSampler _defaultSamplerLinearMip;
+
 
 	// descriptors
 	DescriptorAllocator globalDescriptorAllocator;
