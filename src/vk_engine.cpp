@@ -461,16 +461,24 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
 
-
+    // based on enviroment map mode, use different cube map
     VkImageView skybox;
-    if (enviromentMapMode == 0)
+    switch (enviromentMapMode)
     {
-        skybox = _cubeMap.imageView;
+        case 0:
+            skybox = _cubeMap.imageView;
+            break;
+        case 1:
+            skybox = _testCubemap.imageView;
+            break;
+        case 2:
+            skybox = _prefilterMap.imageView;
+            break;
+        default:
+            skybox = _cubeMap.imageView;
+            break;
     }
-    else 
-    {
-        skybox = _testCubemap.imageView;
-    }
+
     // bind cubemap descriptor set
     VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
     {
@@ -582,7 +590,7 @@ void VulkanEngine::run()
             ImGui::SliderFloat("Height Scale", &heightScale, 0.01f, 0.5f);
             ImGui::SliderInt("Num Layers", &numLayers, 1, 32);
             ImGui::SliderInt("Bump Mode", &bumpMode, 0, 3);
-            ImGui::SliderInt("Enviroment/Irradiance Map", &enviromentMapMode, 0, 1);
+            ImGui::SliderInt("Enviroment/Irradiance Map", &enviromentMapMode, 0, 2);
         }
         ImGui::End();
 
@@ -1076,6 +1084,7 @@ void VulkanEngine::init_pipelines()
     init_sphere_pipeline();
     init_skybox_pipeline();
     init_cubemap_compute_pipeline();
+    init_compute_prefilter_pipeline();
 }
 
 void VulkanEngine::init_background_pipelines()
@@ -1366,6 +1375,55 @@ void VulkanEngine::init_cubemap_compute_pipeline()
         });
 }
 
+void VulkanEngine::init_compute_prefilter_pipeline()
+{
+    // Load the prefilter compute shader
+    VkShaderModule prefilterShader;
+    if (!vkutil::load_shader_module("../../shaders/prefilter.comp.spv", _device, &prefilterShader)) {
+        fmt::print("Error loading prefilter shader\n");
+        return;
+    }
+
+    // Create descriptor set layout
+    DescriptorLayoutBuilder layoutBuilder;
+    layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  // input environment cubemap
+    layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          // PrefilterProperties struct
+    layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);           // output prefilter cubemap
+    _prefilterDescLayout = layoutBuilder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    // Create pipeline layout (no push constants needed since we use uniform buffer)
+    VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+    layoutInfo.pSetLayouts = &_prefilterDescLayout;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pPushConstantRanges = nullptr;
+    layoutInfo.pushConstantRangeCount = 0;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_prefilterPipelineLayout));
+
+    // Create the compute pipeline
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = prefilterShader;
+    stageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout = _prefilterPipelineLayout;
+    pipelineInfo.stage = stageInfo;
+
+    VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &_prefilterPipeline));
+
+    // Cleanup
+    vkDestroyShaderModule(_device, prefilterShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipeline(_device, _prefilterPipeline, nullptr);
+        vkDestroyPipelineLayout(_device, _prefilterPipelineLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _prefilterDescLayout, nullptr);
+        });
+}
+
 void VulkanEngine::init_skybox_pipeline()
 {
     // Load shaders
@@ -1542,8 +1600,10 @@ void VulkanEngine::init_default_data()
     sampl.minLod = 0.0f;                          // minimum mip to sample        
     sampl.maxLod = 12.0f;          // maximum mip to sample      
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinearMip); // mip enabled sampler
-
-    generate_test_cubemap();
+       
+    // generate maps for image based lighting
+    generate_irradiance_map(); // indirect diffuse
+    generate_prefilter_map(); // indirect specular
 
     _mainDeletionQueue.push_function([&]() {
         vkDestroySampler(_device, _defaultSamplerNearest, nullptr);
@@ -1845,10 +1905,8 @@ AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat
 }
 
 // In vk_engine.cpp, add this function
-void VulkanEngine::generate_test_cubemap()
+void VulkanEngine::generate_irradiance_map()
 {
-    fmt::print("Generating test cubemap...\n");
-
     VkExtent3D size = { 32 , 32, 1 };
     _testCubemap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);
 
@@ -1892,7 +1950,6 @@ void VulkanEngine::generate_test_cubemap()
             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
         writer.update_set(_device, descSet);
-        writer.update_set(_device, descSet);
 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             _testCubemapPipelineLayout, 0, 1, &descSet, 0, nullptr);
@@ -1921,6 +1978,88 @@ void VulkanEngine::generate_test_cubemap()
         });
 }
 
+void VulkanEngine::generate_prefilter_map()
+{
+    VkExtent3D size = { 128, 128, 1 };
+    uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+    mipLevels = std::min(5u, mipLevels);
+    _prefilterMap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+    AllocatedBuffer uniformBuffer = create_buffer(sizeof(PrefilterProperties),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    std::vector<VkImageView> mipViews; // Collect views to destroy later
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        // Transition entire image (all mip levels) to GENERAL layout
+        vkutil::transition_image(cmd, _prefilterMap.image,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_GENERAL);
+
+        for (uint32_t mip = 0; mip < mipLevels; mip++) {
+            uint32_t mipWidth = static_cast<uint32_t>(size.width * std::pow(0.5, mip));
+            uint32_t mipHeight = static_cast<uint32_t>(size.height * std::pow(0.5, mip));
+            float roughness = (float)mip / (float)(mipLevels - 1);
+            fmt::print("Generating prefilter mip level {} ({}x{}) with roughness {}\n",
+                mip, mipWidth, mipHeight, roughness);
+
+            VkImageViewCreateInfo mipViewInfo = vkinit::imageview_create_info(
+                _prefilterMap.imageFormat,
+                _prefilterMap.image,
+                VK_IMAGE_ASPECT_COLOR_BIT // what type of image want to aspect through img view
+            );
+            mipViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            mipViewInfo.subresourceRange.baseArrayLayer = 0;
+            mipViewInfo.subresourceRange.layerCount = 6;
+            mipViewInfo.subresourceRange.baseMipLevel = mip;
+            mipViewInfo.subresourceRange.levelCount = 1;
+
+            VkImageView mipView;
+            VK_CHECK(vkCreateImageView(_device, &mipViewInfo, nullptr, &mipView));
+            mipViews.push_back(mipView); // Store for later cleanup
+
+            PrefilterProperties* uniformData = (PrefilterProperties*)uniformBuffer.allocation->GetMappedData();
+            uniformData->roughness = roughness;
+            uniformData->mipLevel = mip;
+
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _prefilterPipeline);
+
+            VkDescriptorSet descSet = get_current_frame()._frameDescriptors.allocate(_device, _prefilterDescLayout);
+            DescriptorWriter writer;
+            writer.write_image(0, _cubeMap.imageView, _defaultSamplerLinearMip,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            writer.write_buffer(1, uniformBuffer.buffer, sizeof(PrefilterProperties), 0,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            writer.write_image(2, mipView, VK_NULL_HANDLE,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            writer.update_set(_device, descSet);
+
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                _prefilterPipelineLayout, 0, 1, &descSet, 0, nullptr);
+
+            vkCmdDispatch(cmd, (mipWidth + 15) / 16, (mipHeight + 15) / 16, 6);
+        }
+
+        // Transition entire image (all mip levels) to SHADER_READ_ONLY layout
+        vkutil::transition_image(cmd, _prefilterMap.image,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }); // immediate_submit ends - GPU work is now complete
+
+    // Now safe to destroy all mip views
+    for (VkImageView view : mipViews) {
+        vkDestroyImageView(_device, view, nullptr);
+    }
+
+    destroy_buffer(uniformBuffer);
+    fmt::print("Prefilter map generated successfully with {} mip levels\n", mipLevels);
+
+    _mainDeletionQueue.push_function([&]() {
+        destroy_image(_prefilterMap);
+        });
+}
 
 
 void VulkanEngine::destroy_image(const AllocatedImage& img)

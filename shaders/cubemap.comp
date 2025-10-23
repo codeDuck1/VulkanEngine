@@ -66,9 +66,11 @@ void main() {
             //vec3 Li = texture(environmentMap, sampleVec).rgb;
 
             // for when mipmaps setup
+            // INTERESTINGLY: this helps with artifacting around bright fireplace that could not fix
             vec3 Li = textureLod(environmentMap, sampleVec, 4.0).rgb;
 
             // Clamp extreme HDR values from fireplace
+            // this also helped with artifact. my first solution
             Li = min(Li, vec3(400.0));
             
             // scale by cos and sin to account for light weaker at larger angles and smaller sample areas

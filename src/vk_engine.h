@@ -135,6 +135,12 @@ public:
 	VkPipelineLayout _testCubemapPipelineLayout;
 	VkDescriptorSetLayout _testCubemapDescLayout;
 
+	// for read/write prefiltered environment map
+	AllocatedImage _prefilterMap;
+	VkPipeline _prefilterPipeline;
+	VkPipelineLayout _prefilterPipelineLayout;
+	VkDescriptorSetLayout _prefilterDescLayout;
+
 	// holds texture images
 	PBRMaterialProperties _pbrMatImages;
 	VkDescriptorSetLayout _pbrMaterialDescriptorLayout;
@@ -219,7 +225,9 @@ public:
 
 	AllocatedImage create_cubemap(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage);
 	AllocatedImage create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
-	void generate_test_cubemap();
+	void generate_irradiance_map();
+
+	void generate_prefilter_map();
 
 	// used for convoluting base cubemap
 	AllocatedImage create_read_write_cubemap(VkExtent3D size, VkFormat format, bool mipmapped);
@@ -256,6 +264,7 @@ private:
 	void init_sphere_pipeline();
 	void init_skybox_pipeline();
 	void init_cubemap_compute_pipeline();
+	void init_compute_prefilter_pipeline();
 
 	void init_default_data();
 

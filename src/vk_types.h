@@ -142,6 +142,12 @@ struct SkyboxPushConstants {
 	VkDeviceAddress vertexBuffer;
 };
 
+struct PrefilterProperties
+{
+	float roughness;
+	uint32_t mipLevel;
+};
+
 struct PBRMaterialProperties
 {
 	AllocatedImage albedoMap;

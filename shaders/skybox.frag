@@ -9,7 +9,7 @@ layout(location = 0) out vec4 outColor;
 void main() 
 {
     // sample cubemap using 3d direction
-    outColor = texture(skybox, inTexCoordDir);
+    //soutColor = texture(skybox, inTexCoordDir);
 
-    //outColor = textureLod(skybox, inTexCoordDir, 3.0);
+    outColor = textureLod(skybox, inTexCoordDir, 4.0); //this breaks the irradiance map viewing bc its cubemap doesnt have mipmaps
 }
