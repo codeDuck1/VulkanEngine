@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <thread>
+#include <cfloat>
 
 VulkanEngine* loadedEngine = nullptr;
 
@@ -833,7 +834,8 @@ void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)
     vkb::SwapchainBuilder swapchainBuilder{ _chosenGPU, _device, _surface };
 
     // 32 bit per pixel
-    _swapchainImageFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    // linear thus must do manual gamma correction
+    _swapchainImageFormat = VK_FORMAT_B8G8R8A8_UNORM; 
 
     vkb::Swapchain vkbSwapchain = swapchainBuilder
         // .format is a member of vkSurfaceFormat, and designated initializer lets us put initializers in any order
@@ -1567,6 +1569,15 @@ void VulkanEngine::init_default_data()
     //"../../assets/nightskyHDR/nz.hdr"
     //};
 
+//    std::string cubemapPathsHDR[6] = {
+//"../../assets/gardenHDR/px.hdr",
+//"../../assets/gardenHDR/nx.hdr",
+//"../../assets/gardenHDR/py.hdr",
+//"../../assets/gardenHDR/ny.hdr",
+//"../../assets/gardenHDR/pz.hdr",
+//"../../assets/gardenHDR/nz.hdr"
+//    };
+
     std::string cubemapPathsHDR[6] = {
     "../../assets/fireplaceroomHDR/px.hdr",
     "../../assets/fireplaceroomHDR/nx.hdr",
@@ -1596,7 +1607,7 @@ void VulkanEngine::init_default_data()
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSampleLinear);
 
 
-    sampl.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;  // sharp transition between mips
+    sampl.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;  // smooth blend btw mip map levels
     sampl.minLod = 0.0f;                          // minimum mip to sample        
     sampl.maxLod = 12.0f;          // maximum mip to sample      
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinearMip); // mip enabled sampler
@@ -1795,7 +1806,7 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     if (mipmapped) {
         uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
         img_info.mipLevels = mipLevels;
-        fmt::print("Mip levels: {}\n", mipLevels);
+        //fmt::print("Mip levels: {}\n", mipLevels);
     }
 
     VK_CHECK(vmaCreateImage(_allocator, &img_info, &allocinfo, &newImage.image, &newImage.allocation, nullptr));
@@ -1821,6 +1832,7 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     size_t total_size = face_size * 6;
 
     AllocatedBuffer uploadBuffer = create_buffer(total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
 
     // Copy all 6 faces into staging buffer
     for (int i = 0; i < 6; i++) {
@@ -1971,7 +1983,7 @@ void VulkanEngine::generate_irradiance_map()
     // Clean up array view
     vkDestroyImageView(_device, arrayView, nullptr);
 
-    fmt::print("Test cubemap generated successfully\n");
+    //fmt::print("Test cubemap generated successfully\n");
 
     _mainDeletionQueue.push_function([&]() {
         destroy_image(_testCubemap);

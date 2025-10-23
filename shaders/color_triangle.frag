@@ -275,7 +275,7 @@ void main()
 
     vec3 color = ambient + Lo; // total light = indirect + direct
 	
-    color = color / (color + vec3(1.0));
+    color = color / (color + vec3(1.0)); // reinhard tone mapping for hdr to ldr 0-1
     color = pow(color, vec3(1.0/2.2));  
    
     outFragColor = vec4(color, 1.0);

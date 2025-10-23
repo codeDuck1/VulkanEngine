@@ -8,8 +8,17 @@ layout(location = 0) out vec4 outColor;
 
 void main() 
 {
-    // sample cubemap using 3d direction
-    //soutColor = texture(skybox, inTexCoordDir);
-
-    outColor = textureLod(skybox, inTexCoordDir, 4.0); //this breaks the irradiance map viewing bc its cubemap doesnt have mipmaps
+    vec3 color = textureLod(skybox, inTexCoordDir, 0.0).rgb;
+    
+    // Much higher exposure for bright skybox
+    float exposure = 0.8;  // Try values between 0.1 - 2.0
+    color *= exposure;
+    
+    // Reinhard tone mapping, to convert hdr vals to ldr for non-hdr monitor
+    color = color / (color + vec3(1.0));
+    
+    // Gamma correction for final display LINEAR TO NONLINEAR TO PLEASE OUR EYES!
+    color = pow(color, vec3(1.0/2.2));
+    
+    outColor = vec4(color, 1.0);
 }

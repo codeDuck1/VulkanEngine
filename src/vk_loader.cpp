@@ -256,7 +256,6 @@ AllocatedImage load_cubemap_from_files(VulkanEngine* engine, std::string paths[6
 
 AllocatedImage load_cubemap_from_files_hdr(VulkanEngine* engine, std::string paths[6])
 {
-    // Load all 6 faces using stbi_loadf for HDR data
     float* cubemapData[6];
     int width, height, channels;
 
@@ -267,10 +266,9 @@ AllocatedImage load_cubemap_from_files_hdr(VulkanEngine* engine, std::string pat
         }
     }
 
+    // Rest of your original code...
     VkExtent3D imageSize = { (uint32_t)width, (uint32_t)height, 1 };
-
-    // Cast to void* for the create_cubemap function
-    void* cubemapDataVoid[6]; // type agnostic
+    void* cubemapDataVoid[6];
     for (int i = 0; i < 6; i++) {
         cubemapDataVoid[i] = cubemapData[i];
     }
@@ -278,7 +276,7 @@ AllocatedImage load_cubemap_from_files_hdr(VulkanEngine* engine, std::string pat
     AllocatedImage cubemap = engine->create_cubemap_hdr(
         cubemapDataVoid,
         imageSize,
-        VK_FORMAT_R32G32B32A32_SFLOAT,  // 32-bit float HDR format
+        VK_FORMAT_R32G32B32A32_SFLOAT,
         VK_IMAGE_USAGE_SAMPLED_BIT,
         true
     );
