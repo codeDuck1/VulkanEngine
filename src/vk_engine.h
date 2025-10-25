@@ -141,6 +141,11 @@ public:
 	VkPipelineLayout _prefilterPipelineLayout;
 	VkDescriptorSetLayout _prefilterDescLayout;
 
+	AllocatedImage _brdfLUT;
+	VkPipeline _brdfLUTPipeline;
+	VkPipelineLayout _brdfLUTPipelineLayout;
+	VkDescriptorSetLayout _brdfLUTDescLayout;
+
 	// holds texture images
 	PBRMaterialProperties _pbrMatImages;
 	VkDescriptorSetLayout _pbrMaterialDescriptorLayout;
@@ -223,11 +228,12 @@ public:
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
+	// all for ibl
 	AllocatedImage create_cubemap(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage);
 	AllocatedImage create_cubemap_hdr(void* data[6], VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	void generate_irradiance_map();
-
 	void generate_prefilter_map();
+	void generate_brdf_lut();
 
 	// used for convoluting base cubemap
 	AllocatedImage create_read_write_cubemap(VkExtent3D size, VkFormat format, bool mipmapped);
@@ -265,6 +271,7 @@ private:
 	void init_skybox_pipeline();
 	void init_cubemap_compute_pipeline();
 	void init_compute_prefilter_pipeline();
+	void init_brdflut_pipeline();
 
 	void init_default_data();
 

@@ -1426,6 +1426,53 @@ void VulkanEngine::init_compute_prefilter_pipeline()
         });
 }
 
+void VulkanEngine::init_brdflut_pipeline()
+{
+    // Load the brdf lut compute shader used to convolute and store result
+    VkShaderModule brdfLUTShader;
+    if (!vkutil::load_shader_module("../../shaders/brdfLUT.comp.spv", _device, &brdfLUTShader)) {
+        fmt::print("Error loading BRDF LUT shader\n");
+        return;
+    }
+
+    // Create descriptor set layout
+    DescriptorLayoutBuilder layoutBuilder;
+    layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE); // image to write to in compute shader
+    _brdfLUTDescLayout = layoutBuilder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT); // only used in compute
+
+    VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+    layoutInfo.pSetLayouts = &_brdfLUTDescLayout;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pPushConstantRanges = nullptr;
+    layoutInfo.pushConstantRangeCount = 0;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_brdfLUTPipelineLayout));
+
+    // Create the compute pipeline
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = brdfLUTShader;
+    stageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout = _brdfLUTPipelineLayout;
+    pipelineInfo.stage = stageInfo;
+
+    VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &_brdfLUTPipeline));
+
+    // Cleanup
+    vkDestroyShaderModule(_device, brdfLUTShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipeline(_device, _brdfLUTPipeline, nullptr);
+        vkDestroyPipelineLayout(_device, _brdfLUTPipelineLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _brdfLUTDescLayout, nullptr);
+        });
+}
+
+
 void VulkanEngine::init_skybox_pipeline()
 {
     // Load shaders
@@ -2070,6 +2117,68 @@ void VulkanEngine::generate_prefilter_map()
 
     _mainDeletionQueue.push_function([&]() {
         destroy_image(_prefilterMap);
+        });
+}
+
+void VulkanEngine::generate_brdf_lut()
+{
+    // Create 512x512 2D texture for BRDF integration lookup table
+    VkExtent3D size = { 512, 512, 1 };
+
+    // Create image with RG16F format (stores the A and B integration results)
+    VkImageCreateInfo imgInfo = vkinit::image_create_info(
+        VK_FORMAT_R16G16_SFLOAT,
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        size
+    );
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+    vmaCreateImage(_allocator, &imgInfo, &allocInfo, &_brdfLUT.image, &_brdfLUT.allocation, nullptr);
+
+    // Create image view
+    VkImageViewCreateInfo viewInfo = vkinit::imageview_create_info(VK_FORMAT_R16G16_SFLOAT, _brdfLUT.image, 
+        VK_IMAGE_ASPECT_COLOR_BIT
+    );
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &_brdfLUT.imageView));
+
+    _brdfLUT.imageExtent = size;
+    _brdfLUT.imageFormat = VK_FORMAT_R16G16_SFLOAT;
+
+    // Generate the BRDF LUT using compute shader
+    immediate_submit([&](VkCommandBuffer cmd) {
+        // Transition to GENERAL layout for compute shader writes
+        vkutil::transition_image(cmd, _brdfLUT.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+        // Bind compute pipeline
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _brdfLUTPipeline);
+
+        // Allocate and bind descriptor set
+        VkDescriptorSet descSet = get_current_frame()._frameDescriptors.allocate(_device, _brdfLUTDescLayout);
+        DescriptorWriter writer;
+        writer.write_image(0, _brdfLUT.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        writer.update_set(_device, descSet);
+
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _brdfLUTPipelineLayout, 0, 1, &descSet, 0, nullptr);
+
+        // Dispatch compute shader (16x16 workgroup size)
+        vkCmdDispatch(cmd, (size.width + 15) / 16, (size.height + 15) / 16, 1);
+
+        // Transition to SHADER_READ_ONLY for sampling in fragment shaders
+        vkutil::transition_image(cmd, _brdfLUT.image,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        });
+
+    fmt::print("BRDF LUT generated successfully (512x512)\n");
+
+    _mainDeletionQueue.push_function([&]() {
+        destroy_image(_brdfLUT);
         });
 }
 
