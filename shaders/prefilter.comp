@@ -6,7 +6,7 @@ layout(set = 0, binding = 1) uniform UniformData {
     float roughness;
     uint mipLevel;
 } ubo;
-layout(set = 0, binding = 2, rgba16f) uniform writeonly image2DArray prefilteredMap;
+layout(set = 0, binding = 2, rgba16f) uniform writeonly image2DArray prefilteredMap; // z direction of array is layers
 
 const float PI = 3.14159265359;
 
@@ -89,7 +89,7 @@ void main()
     if(x >= imgSize.x || y >= imgSize.y || z >= 6)
         return;
     
-    ivec3 pixelCoord = ivec3(x, y, z);
+    ivec3 pixelCoord = ivec3(x, y, z); // z is layers of 2d image array, x and y are there respective coords. idk if can call this texel coords
     
     // Convert pixel coordinates to texture coordinates [0, 1]
     vec2 texCoord = (vec2(x, y) + 0.5) / vec2(imgSize);
