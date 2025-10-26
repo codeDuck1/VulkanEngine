@@ -369,29 +369,30 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     VkDescriptorSet pbrMaterialSet = get_current_frame()._frameDescriptors.allocate(_device, _pbrMaterialDescriptorLayout);
     // Write all PBR textures
     DescriptorWriter writer;
-    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSampleLinear,
+    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSampleLinear,
+    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSampleLinear,
+    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSampleLinear,
+    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSampleLinear,
+    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSampleLinear,
+    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSamplerLinear,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, pbrMaterialSet);
 
-    // Allocate and set up cubemap descriptor set
-    VkDescriptorSet cubemapSet = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
-    DescriptorWriter cubemapWriter;
-    cubemapWriter.write_image(0, _testCubemap.imageView, _defaultSampleLinear,  // or whatever your cubemap is called
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    cubemapWriter.update_set(_device, cubemapSet);
+    // Allocate and set up ibl descriptor set
+    VkDescriptorSet iblSet = get_current_frame()._frameDescriptors.allocate(_device, _iblDescLayout);
+    DescriptorWriter iblWriter;
+    iblWriter.write_image(0, _irradianceCMap.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    iblWriter.write_image(1, _prefilterMap.imageView, _defaultSamplerLinearMip, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    iblWriter.write_image(2, _brdfLUT.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    iblWriter.update_set(_device, iblSet);
 
     // Bind both descriptor sets
-    VkDescriptorSet descriptorSets[] = { pbrMaterialSet, cubemapSet };
+    VkDescriptorSet descriptorSets[] = { pbrMaterialSet, iblSet };
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 2, descriptorSets, 0, nullptr);
     // ----- END PBR DESCRIPTOR SET ------
 
@@ -470,7 +471,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
             skybox = _cubeMap.imageView;
             break;
         case 1:
-            skybox = _testCubemap.imageView;
+            skybox = _irradianceCMap.imageView;
             break;
         case 2:
             skybox = _prefilterMap.imageView;
@@ -589,7 +590,7 @@ void VulkanEngine::run()
         // second imgui window
         if (ImGui::Begin("Parallax Settings")) {
             ImGui::SliderFloat("Height Scale", &heightScale, 0.01f, 0.5f);
-            ImGui::SliderInt("Num Layers", &numLayers, 1, 32);
+            ImGui::SliderInt("Num Layers", &numLayers, 1, 128);
             ImGui::SliderInt("Bump Mode", &bumpMode, 0, 3);
             ImGui::SliderInt("Enviroment/Irradiance Map", &enviromentMapMode, 0, 2);
         }
@@ -1040,10 +1041,20 @@ void VulkanEngine::init_descriptors()
         _pbrMaterialDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
+
+    // basic cubemap desc layout
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // Cubemap
         _cubeMapDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
+    }
+
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // irradiance map
+        builder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // prefiltered env map
+        builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // brdf integration map
+        _iblDescLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
     //make sure both the descriptor allocator and the new layout get cleaned up properly
@@ -1054,6 +1065,7 @@ void VulkanEngine::init_descriptors()
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _pbrMaterialDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _cubeMapDescriptorLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _iblDescLayout, nullptr);
         });
 
 
@@ -1087,6 +1099,7 @@ void VulkanEngine::init_pipelines()
     init_skybox_pipeline();
     init_cubemap_compute_pipeline();
     init_compute_prefilter_pipeline();
+    init_brdflut_pipeline();
 }
 
 void VulkanEngine::init_background_pipelines()
@@ -1205,7 +1218,7 @@ void VulkanEngine::init_mesh_pipeline()
 
     VkDescriptorSetLayout setLayouts[] = {
     _pbrMaterialDescriptorLayout,  // Set 0: PBR material textures
-    _cubeMapDescriptorLayout       // Set 1: Cubemap
+    _iblDescLayout       // Set 1: Cubemap
     };
 
     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
@@ -1236,7 +1249,7 @@ void VulkanEngine::init_mesh_pipeline()
 
     //pipelineBuilder.disable_depthtest();
     pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-
+    
     //connect the image format we will draw into, from draw image and depth image
     pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
     pipelineBuilder.set_depth_format(_depthImage.imageFormat);
@@ -1587,6 +1600,13 @@ void VulkanEngine::init_default_data()
         //.aoMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-ao.png", false),
         //.heightMap = load_image_from_file(this, "..\\..\\assets\\sandstonecliff\\sandstonecliff-height.png", false),
 
+        //.albedoMap = load_image_from_file(this, "..\\..\\assets\\patched-brickwork\\patched-brickwork_albedo.png", false),
+        //.normalMap = load_image_from_file(this, "..\\..\\assets\\patched-brickwork\\patched-brickwork_normal-ogl.png", false),
+        //.metallicMap = load_image_from_file(this, "..\\..\\assets\\patched-brickwork\\patched-brickwork_metallic.png", false),
+        //.roughnessMap = load_image_from_file(this, "..\\..\\assets\\patched-brickwork\\patched-brickwork_roughness.png", false),
+        //.aoMap = load_image_from_file(this, "..\\..\\assets\\patched-brickwork\\patched-brickwork_ao.png", false),
+        //.heightMap = load_image_from_file(this, "..\\..\\assets\\patched-brickwork\\patched-brickwork_height.png", false),
+
         .albedoMap = load_image_from_file(this, "..\\..\\assets\\toybox\\wood.png", false),
         .normalMap = load_image_from_file(this, "..\\..\\assets\\toybox\\toy_box_normal.png", false),
         .metallicMap = load_image_from_file(this, "..\\..\\assets\\rusted-steel\\rusted-steel_metallic.png", false),
@@ -1643,16 +1663,20 @@ void VulkanEngine::init_default_data()
     sampl.magFilter = VK_FILTER_NEAREST;
     sampl.minFilter = VK_FILTER_NEAREST;
     
-    sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  
-    sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; 
-    sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  
+    sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerNearest);
 
     sampl.magFilter = VK_FILTER_LINEAR;
     sampl.minFilter = VK_FILTER_LINEAR;
-    vkCreateSampler(_device, &sampl, nullptr, &_defaultSampleLinear);
+    vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinear);
 
+
+    sampl.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampl.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampl.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // w ignored for 2d textures
 
     sampl.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;  // smooth blend btw mip map levels
     sampl.minLod = 0.0f;                          // minimum mip to sample        
@@ -1662,10 +1686,11 @@ void VulkanEngine::init_default_data()
     // generate maps for image based lighting
     generate_irradiance_map(); // indirect diffuse
     generate_prefilter_map(); // indirect specular
+    generate_brdf_lut(); // indirect specular
 
     _mainDeletionQueue.push_function([&]() {
         vkDestroySampler(_device, _defaultSamplerNearest, nullptr);
-        vkDestroySampler(_device, _defaultSampleLinear, nullptr);
+        vkDestroySampler(_device, _defaultSamplerLinear, nullptr);
         vkDestroySampler(_device, _defaultSamplerLinearMip, nullptr);
 
         destroy_image(_whiteImage);
@@ -1967,12 +1992,12 @@ AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat
 void VulkanEngine::generate_irradiance_map()
 {
     VkExtent3D size = { 32 , 32, 1 };
-    _testCubemap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+    _irradianceCMap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);
 
     // Create a single 2D array view instead of 6 separate 2D views
     VkImageViewCreateInfo arrayViewInfo = vkinit::imageview_create_info(
-        _testCubemap.imageFormat,
-        _testCubemap.image,
+        _irradianceCMap.imageFormat,
+        _irradianceCMap.image,
         VK_IMAGE_ASPECT_COLOR_BIT
     );
     arrayViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY; 
@@ -1986,7 +2011,7 @@ void VulkanEngine::generate_irradiance_map()
 
     // dispatch compute shader
     immediate_submit([&](VkCommandBuffer cmd) {
-        vkutil::transition_image(cmd, _testCubemap.image,
+        vkutil::transition_image(cmd, _irradianceCMap.image,
             VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_GENERAL);
 
@@ -2023,7 +2048,7 @@ void VulkanEngine::generate_irradiance_map()
             vkCmdDispatch(cmd, (size.width + 15) / 16, (size.height + 15) / 16, 1);
         }
 
-        vkutil::transition_image(cmd, _testCubemap.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        vkutil::transition_image(cmd, _irradianceCMap.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
        
         });
 
@@ -2033,13 +2058,13 @@ void VulkanEngine::generate_irradiance_map()
     //fmt::print("Test cubemap generated successfully\n");
 
     _mainDeletionQueue.push_function([&]() {
-        destroy_image(_testCubemap);
+        destroy_image(_irradianceCMap);
         });
 }
 
 void VulkanEngine::generate_prefilter_map()
 {
-    VkExtent3D size = { 128, 128, 1 };
+    VkExtent3D size = { 256, 256, 1 };
     uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
     mipLevels = std::min(5u, mipLevels);
     _prefilterMap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);

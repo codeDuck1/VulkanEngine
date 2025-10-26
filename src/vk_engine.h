@@ -130,7 +130,7 @@ public:
 	VkDescriptorSetLayout _cubeMapDescriptorLayout;
 
 	// for read/write convolution cubemap
-	AllocatedImage _testCubemap;  
+	AllocatedImage _irradianceCMap;  
 	VkPipeline _testCubemapPipeline;
 	VkPipelineLayout _testCubemapPipelineLayout;
 	VkDescriptorSetLayout _testCubemapDescLayout;
@@ -146,11 +146,14 @@ public:
 	VkPipelineLayout _brdfLUTPipelineLayout;
 	VkDescriptorSetLayout _brdfLUTDescLayout;
 
+	// used for sampling irradiance, prefiltered env, and brdf integration maps
+	VkDescriptorSetLayout _iblDescLayout;
+
 	// holds texture images
 	PBRMaterialProperties _pbrMatImages;
 	VkDescriptorSetLayout _pbrMaterialDescriptorLayout;
 
-	VkSampler _defaultSampleLinear;
+	VkSampler _defaultSamplerLinear;
 	VkSampler _defaultSamplerNearest;
 	// mip enabled sampler
 	VkSampler _defaultSamplerLinearMip;

@@ -7,7 +7,7 @@ layout (location = 2) out vec3 outCameraPos;
 layout (location = 3) out vec3 outNormal;
 layout (location = 4) out vec3 outWorldPos;
 // TREATED AS 3 VEC 3 SLOTS, thus using locations 5,6,7
-layout (location = 5) out mat3 tbnMatrix; 
+layout (location = 5) out mat3 tbnMatrixInverse; 
 
 struct Vertex {
 
@@ -60,7 +60,7 @@ void main()
     // Transform to tangent space
     outCameraPos = TBN_inverse * PushConstants.camera_pos.xyz;
     outWorldPos = TBN_inverse * worldPos.xyz;
-    tbnMatrix = TBN_inverse;
+    tbnMatrixInverse = TBN_inverse;
 }
 
 

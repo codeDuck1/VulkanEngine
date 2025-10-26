@@ -9,6 +9,8 @@ layout(set = 0, binding = 4) uniform sampler2D aoMap;
 layout(set = 0, binding = 5) uniform sampler2D heightMap;
 
 layout(set = 1, binding = 0) uniform samplerCube irradianceMap;
+layout(set = 1, binding = 1) uniform samplerCube prefilteredMap;
+layout(set = 1, binding = 2) uniform sampler2D brdfIntegrMap;
 
 //shader input
 layout (location = 0) in vec3 inColor;
@@ -16,7 +18,7 @@ layout (location = 1) in vec2 inUVs; // uvs and texcoord same
 layout (location = 2) in vec3 CameraPos;
 layout (location = 3) in vec3 Normal;
 layout (location = 4) in vec3 WorldPos;
-layout (location = 5) in mat3 tbnMatrix;
+layout (location = 5) in mat3 inTBNMatrixInverse;
 
 //output write
 // connects to the render attachments of render pass
@@ -222,10 +224,8 @@ void main()
     for(int i = 0; i < 1; ++i) 
     {
         // Transform light position to tangent space
-        vec3 lightPosTangent = tbnMatrix * lightPositions[i];
+        vec3 lightPosTangent = inTBNMatrixInverse * lightPositions[i];
 
-       
-        
         vec3 L = normalize(lightPosTangent - WorldPos);
 
          // SELF-SHADOWING
@@ -258,19 +258,39 @@ void main()
         float NdotL = max(dot(N, L), 0.0);                
         Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow; 
     }   
+
+
+
+
     
 
-    // use irradiance map for indirect diffuse 
+    // use irradiance map for indirect diffuse and prefiltered env+brdf lut for indirect specular
     //vec3 ambient = vec3(0.03) * albedo * ao;
-    vec3 worldNormal = normalize(transpose(tbnMatrix) * N); // Convert normal from tangent space to world space for cubemap sampling
+
+    // Transform normal and view dir vecs from tangent to world space for cube map sampling
+    mat3 TBN = transpose(inTBNMatrixInverse); // tangent to world
+    vec3 worldNormal = normalize(TBN * N);
+    vec3 worldViewDir = normalize(TBN * V);
+
+    vec3 R = reflect(-worldViewDir, worldNormal);
 
     // Fresnel for ambient (using view direction)
-    vec3 kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness); // NOTEE!!!!: why this one use roughness and other not?
+    vec3 F = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness); // NOTEE!!!!: why this one use roughness and other not?
+    vec3 kS = F;
     vec3 kD = 1.0 - kS;
-    // Sample irradiance map using WORLD SPACE normal
+    kD *= 1 - metallic;
+
+    // Sample irradiance map (diffuse ambient) using WORLD SPACE normal 
     vec3 irradiance = texture(irradianceMap, worldNormal).rgb;
     vec3 diffuse = irradiance * albedo;
-    vec3 ambient = (kD * diffuse) * ao;
+
+    const float MAX_REFLECTION_LOD = 4.0;
+    vec3 prefilteredColor = textureLod(prefilteredMap, R,  roughness * MAX_REFLECTION_LOD).rgb;   
+    vec2 envBRDF  = texture(brdfIntegrMap, vec2(max(dot(N, V), 0.0), roughness)).rg;
+    vec3 specular = prefilteredColor * (F * envBRDF.x + envBRDF.y);
+
+
+    vec3 ambient = (kD * diffuse + specular) * ao;
 
 
     vec3 color = ambient + Lo; // total light = indirect + direct
