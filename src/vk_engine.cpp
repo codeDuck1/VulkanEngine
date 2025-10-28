@@ -74,6 +74,12 @@ void VulkanEngine::init()
     mainCamera.yaw = 0;
     _lastTime = SDL_GetTicks64();  
     _deltaTime = 0.0f;        
+
+    // try loading and stroing big scene
+    std::string structurePath = { "..\\..\\assets\\structure.glb" };
+    auto structureFile = loadGltf(this, structurePath);
+    assert(structureFile.has_value());
+    loadedScenes["structure"] = *structureFile;
 }
 
 /// <summary>
@@ -84,6 +90,8 @@ void VulkanEngine::cleanup()
     if (_isInitialized) {
         // make sure the gpu has stopped doing things
         vkDeviceWaitIdle(_device);
+
+        loadedScenes.clear();
 
         // flush frame data
         for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -321,7 +329,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
     //write the buffer
     GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
-    *sceneUniformData = sceneData;
+    *sceneUniformData = _sceneData;
 
     //create a descriptor set that binds that buffer and update it
     // allocates from a pool if any available/free. if not creates new one and allocates from it 
@@ -639,25 +647,40 @@ void VulkanEngine::updateDeltaTime()
     _lastTime = currentTime;
 }
 
+
+
+/// <summary>
+/// everytime draw is called it adds RenderObject into the mainDrawContext,
+/// which is just a struct that holds lists to renderobjects and is looped through in
+/// draw_geometry. mainDrawContext is cleared each frame. 
+/// RenderObjects contain all data needed for one drawindexed call.
+/// </summary>
 void VulkanEngine::update_scene()
 {
+    mainCamera.update(_deltaTime);
+
     mainDrawContext.OpaqueSurfaces.clear();
 
-    loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    //loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
 
-    sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
+    glm::mat4 view = mainCamera.getViewMatrix();
     // camera projection
-    sceneData.proj = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.f, 0.1f);
+    glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.f, 0.1f);
+
 
     // invert the Y direction on projection matrix so that we are more similar
     // to opengl and gltf axis
-    sceneData.proj[1][1] *= -1;
-    sceneData.viewproj = sceneData.proj * sceneData.view;
+    _sceneData.proj[1][1] *= -1;
+
+    _sceneData.view = view;
+    _sceneData.proj = projection;
+    _sceneData.viewproj = _sceneData.proj * _sceneData.view;
 
     //some default lighting parameters
-    sceneData.ambientColor = glm::vec4(.1f);
-    sceneData.sunlightColor = glm::vec4(1.f);
-    sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
+    _sceneData.ambientColor = glm::vec4(.1f);
+    _sceneData.sunlightColor = glm::vec4(1.f);
+    _sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
 
 
 }

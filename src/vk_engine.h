@@ -216,6 +216,9 @@ public:
 	MaterialInstance defaultData;
 	GLTFMetallic_Roughness metalRoughMaterial;
 
+	// loaded gltfs by name
+	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+
 
 	// descriptors
 	DescriptorAllocatorGrowable globalDescriptorAllocator;
@@ -225,7 +228,7 @@ public:
 	// descriptor layout for above set, need for creating pipeline
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
 
-	GPUSceneData sceneData;
+	GPUSceneData _sceneData;
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout; // set itself created dynamically
 	
 
@@ -311,6 +314,7 @@ public:
 	DrawContext mainDrawContext; 
 	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
 	void update_scene();
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 
 private:
 	void init_vulkan();
@@ -323,7 +327,7 @@ private:
 	void destroy_swapchain();
 	void resize_swapchain();
 
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	
 	void destroy_buffer(const AllocatedBuffer& buffer);
 	
 
