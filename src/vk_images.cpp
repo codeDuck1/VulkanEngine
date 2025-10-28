@@ -208,13 +208,14 @@ void vkutil::generate_cubemap_mipmaps(VkCommandBuffer cmd, VkImage image, VkExte
 
 				vkCmdBlitImage2(cmd, &blitInfo);
 
-				fmt::print("COMPLETED CUBEMAP MIPMAP");
+				//fmt::print("COMPLETED CUBEMAP MIPMAP");
 			}
 			imageSize = halfSize;
 		}
 	}
 
 	// Final transition of ALL mip levels to SHADER_READ_ONLY
+	// WAITS FOR ALL FACES AND THEIR RESPECTIVE MIPS  TO FINISH GENERATING BEFORE TRANSITION ALL AT ONCE
 	VkImageMemoryBarrier2 finalBarrier{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
 	finalBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 	finalBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;

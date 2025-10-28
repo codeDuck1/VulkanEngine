@@ -86,8 +86,8 @@ struct Vertex {
 
 	// for normal mapping
 	// these simply create a little local xyz coord frame on each shape face 
-	glm::vec4 tangent;
-	glm::vec4 bitangent;    
+	//glm::vec4 tangent;
+	//glm::vec4 bitangent;    
 };
 #pragma pack(pop)
 
@@ -132,8 +132,8 @@ struct GPUMeshBuffers {
 // push constants for drawing the mesh
 struct GPUDrawPushConstants {
 	glm::mat4 worldMatrix;
-	glm::mat4 modelMatrix;
-	glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
+	//glm::mat4 modelMatrix;
+	//glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
 	VkDeviceAddress vertexBuffer;
 };
 
@@ -156,4 +156,60 @@ struct PBRMaterialProperties
 	AllocatedImage roughnessMap;
 	AllocatedImage aoMap;
 	AllocatedImage heightMap;
+};
+
+
+// structs for material data
+enum class MaterialPass :uint8_t {
+	MainColor,
+	Transparent,
+	Other
+};
+struct MaterialPipeline {
+	VkPipeline pipeline;
+	VkPipelineLayout layout;
+};
+
+struct MaterialInstance {
+	MaterialPipeline* pipeline;
+	VkDescriptorSet materialSet;
+	MaterialPass passType;
+};
+
+struct DrawContext;
+
+// base class for a renderable dynamic object
+class IRenderable {
+
+	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) = 0;
+};
+
+// implementation of a drawable scene node.
+// the scene node can hold children and will also keep a transform to propagate
+// to them
+struct Node : public IRenderable {
+
+	// parent pointer must be a weak pointer to avoid circular dependencies
+	std::weak_ptr<Node> parent;
+	std::vector<std::shared_ptr<Node>> children;
+
+	glm::mat4 localTransform; // transform relative to parent
+	glm::mat4 worldTransform; // model matrix
+
+	// Updates world transforms (model matrices) by propagating parent transforms down the hierarchy
+	void refreshTransform(const glm::mat4& parentMatrix)
+	{
+		worldTransform = parentMatrix * localTransform; // transform in parents coord system, then to world space
+		for (auto c : children) {
+			c->refreshTransform(worldTransform);
+		}
+	}
+
+	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) override
+	{
+		// draw children
+		for (auto& c : children) {
+			c->Draw(topMatrix, ctx);
+		}
+	}
 };

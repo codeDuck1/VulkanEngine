@@ -6,11 +6,16 @@
 
 
 
+struct GLTFMaterial {
+    MaterialInstance data;
+};
+
 // believe this contains indices for each submesh/primitve
 // one per submesh/primitive
 struct GeoSurface {
     uint32_t startIndex;
     uint32_t count;
+    std::shared_ptr<GLTFMaterial> material;
 };
 
 // given mesh will have a name, and mesh buffer

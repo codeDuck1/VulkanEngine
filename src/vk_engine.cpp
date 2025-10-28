@@ -22,7 +22,6 @@
 
 #include <chrono>
 #include <thread>
-#include <cfloat>
 
 VulkanEngine* loadedEngine = nullptr;
 
@@ -136,6 +135,8 @@ void VulkanEngine::cleanup()
 
 void VulkanEngine::draw()
 {
+    update_scene();
+
     // wait until the gpu has finished rendering the last frame. timeout of 1 second (in nanoseconds). after 1 second return vk timeout
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
     VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence)); // fences must be reset between uses
@@ -255,7 +256,6 @@ void VulkanEngine::draw()
 
     // increase the number of frames drawn
     _frameNumber++;
-
 }
 
 void VulkanEngine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView)
@@ -309,27 +309,30 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd)
 float rotAngle = 0.0f;
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 {
+
     // allocate a new uniform buffer and write it into a descriptor set every frame (for scene shared data)
     // can skip staging buffer copy bc using cpu to gpu for uniform buffer
     // containing small amt of data that gets frequent updates
-    //AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-    ////add it to the deletion queue of this frame so it gets deleted once its been used
-    //get_current_frame()._deletionQueue.push_function([=, this]() {
-    //    destroy_buffer(gpuSceneDataBuffer);
-    //    });
+    AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    //add it to the deletion queue of this frame so it gets deleted once its been used
+    get_current_frame()._deletionQueue.push_function([=, this]() {
+        destroy_buffer(gpuSceneDataBuffer);
+        });
 
-    ////write the buffer
-    //GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
-    //*sceneUniformData = sceneData;
-    ////create a descriptor set that binds that buffer and update it
-    //// allocates from a pool if any available/free. if not creates new one and allocates from it 
-    //VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _gpuSceneDataDescriptorLayout);
-    //// write new buffer into descriptor set
-    //DescriptorWriter writer;
-    //writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    //writer.update_set(_device, globalDescriptor); // now global descriptor rdy to be used for drawing
+    //write the buffer
+    GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
+    *sceneUniformData = sceneData;
+
+    //create a descriptor set that binds that buffer and update it
+    // allocates from a pool if any available/free. if not creates new one and allocates from it 
+    VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _gpuSceneDataDescriptorLayout);
+    // write new buffer into descriptor set
+    DescriptorWriter writer;
+    writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.update_set(_device, globalDescriptor); // now global descriptor rdy to be used for drawing
 
 
+    
     //begin a render pass connected to our draw image
     VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
     VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
@@ -338,7 +341,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     vkCmdBeginRendering(cmd, &renderInfo);
 
     // use mesh pipeline!
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
+    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
     // set dynamic viewport and scissor since we didnt hard code when creating pipeline
     // dynamic pipeline state
@@ -360,152 +363,176 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     scissor.extent.height = _drawExtent.height;
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
-    GPUDrawPushConstants push_constants;
-    BumpPushConstants bump_push_constants;
-    mainCamera.update(_deltaTime);
-    
 
-    // Allocate PBR material descriptor set for this frame
-    VkDescriptorSet pbrMaterialSet = get_current_frame()._frameDescriptors.allocate(_device, _pbrMaterialDescriptorLayout);
-    // Write all PBR textures
-    DescriptorWriter writer;
-    writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSamplerLinear,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSamplerLinear,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSamplerLinear,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSamplerLinear,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerLinear,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSamplerLinear,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.update_set(_device, pbrMaterialSet);
+    // render object represents one surface/primitve of a mesh
+    for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
 
-    // Allocate and set up ibl descriptor set
-    VkDescriptorSet iblSet = get_current_frame()._frameDescriptors.allocate(_device, _iblDescLayout);
-    DescriptorWriter iblWriter;
-    iblWriter.write_image(0, _irradianceCMap.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    iblWriter.write_image(1, _prefilterMap.imageView, _defaultSamplerLinearMip, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    iblWriter.write_image(2, _brdfLUT.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    iblWriter.update_set(_device, iblSet);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline); // in theory each surface could be using its own pipeline
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
 
-    // Bind both descriptor sets
-    VkDescriptorSet descriptorSets[] = { pbrMaterialSet, iblSet };
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 2, descriptorSets, 0, nullptr);
-    // ----- END PBR DESCRIPTOR SET ------
+        vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    
-    // draw monkey
-    glm::mat4 model = glm::mat4(1.0f);
-    rotAngle += _deltaTime * glm::radians(60.0f);
-    //model = glm::rotate(model, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        GPUDrawPushConstants pushConstants;
+        pushConstants.vertexBuffer = draw.vertexBufferAddress;
+        pushConstants.worldMatrix = draw.transform;
 
-    glm::mat4 view = mainCamera.getViewMatrix();
-    // camera projection
-    glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
-    // invert the Y direction on projection matrix so that we are more similar
-    // to opengl and gltf axis
-    projection[1][1] *= -1;
-    push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
-    push_constants.worldMatrix = projection * view; // model matrix is implicit as identity
-    push_constants.modelMatrix = model;
-    push_constants.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
-    bump_push_constants.heightScale = heightScale;
-    bump_push_constants.numLayers = numLayers;
-    bump_push_constants.bumpMode = bumpMode;
-    vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-    vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(GPUDrawPushConstants), sizeof(BumpPushConstants), &bump_push_constants);
-    vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
+        vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
-
-    // Draw light spheres
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipeline);
-    // Light positions same as hardcoded in frag shader
-    // for pbr calculations on monkey
-    glm::vec3 lightPositions[4] = {
-        glm::vec3(-3.0f, 3.0f, 3.0f),   
-        glm::vec3(3.0f, 3.0f, 3.0f),
-        glm::vec3(-3.0f, -3.0f, 3.0f),
-        glm::vec3(3.0f, -3.0f, 3.0f)
-    };
-
-    // draw sphere at each light position
-    for (int i = 0; i < 1; i++)
-    {
-        //bind a texture.
-        // allocate new descriptor set
-        VkDescriptorSet imageSet = get_current_frame()._frameDescriptors.allocate(_device, _singleImageDescriptorLayout);
-        {
-            // write single image descriptor on binding 0
-            DescriptorWriter writer;
-            writer.write_image(0, _errorCheckerboardImage.imageView, _defaultSamplerNearest, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-            writer.update_set(_device, imageSet);
-        }
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipelineLayout, 0, 1, &imageSet, 0, nullptr);
-
-
-
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), lightPositions[i]);
-        model = glm::scale(model, glm::vec3(0.3f)); 
-
-        push_constants.worldMatrix = projection * view;
-        push_constants.modelMatrix = model; 
-        push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
-        push_constants.vertexBuffer = testMeshes[1]->meshBuffers.vertexBufferAddress; // sphere mesh at index 1. buffer memory contains multiple meshes
-
-        vkCmdPushConstants(cmd, _spherePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-        vkCmdBindIndexBuffer(cmd, testMeshes[1]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cmd, testMeshes[1]->surfaces[0].count, 1, testMeshes[1]->surfaces[0].startIndex, 0, 0);
+        vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
     }
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
-
-    // based on enviroment map mode, use different cube map
-    VkImageView skybox;
-    switch (enviromentMapMode)
-    {
-        case 0:
-            skybox = _cubeMap.imageView;
-            break;
-        case 1:
-            skybox = _irradianceCMap.imageView;
-            break;
-        case 2:
-            skybox = _prefilterMap.imageView;
-            break;
-        default:
-            skybox = _cubeMap.imageView;
-            break;
-    }
-
-    // bind cubemap descriptor set
-    VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
-    {
-        DescriptorWriter writer;
-        writer.write_image(0, skybox, _defaultSamplerLinearMip,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-        writer.update_set(_device, skyboxDset);
-    }
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &skyboxDset, 0, nullptr);
-
-    // push constants
-    SkyboxPushConstants skyboxPush;
-    glm::mat4 skyboxView = mainCamera.getViewMatrix();
-    skyboxView = glm::mat4(glm::mat3(skyboxView)); // use only rotation, discard translation from camera
-    glm::mat4 projectionM = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
-    projectionM[1][1] *= -1;
-
-    skyboxPush.viewProj = projectionM * skyboxView;
-    skyboxPush.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress;  // Cube mesh
-
-    vkCmdPushConstants(cmd, _skyboxPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(SkyboxPushConstants), &skyboxPush);
-    vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
 
     vkCmdEndRendering(cmd);
+
+
+
+    //GPUDrawPushConstants push_constants;
+    //BumpPushConstants bump_push_constants;
+    //mainCamera.update(_deltaTime);
+    //
+
+    //// Allocate PBR material descriptor set for this frame
+    //VkDescriptorSet pbrMaterialSet = get_current_frame()._frameDescriptors.allocate(_device, _pbrMaterialDescriptorLayout);
+    //// Write all PBR textures
+    //DescriptorWriter writer;
+    //writer.write_image(0, _pbrMatImages.albedoMap.imageView, _defaultSamplerLinear,
+    //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //writer.write_image(1, _pbrMatImages.normalMap.imageView, _defaultSamplerLinear,
+    //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //writer.write_image(2, _pbrMatImages.metallicMap.imageView, _defaultSamplerLinear,
+    //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //writer.write_image(3, _pbrMatImages.roughnessMap.imageView, _defaultSamplerLinear,
+    //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //writer.write_image(4, _pbrMatImages.aoMap.imageView, _defaultSamplerLinear,
+    //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //writer.write_image(5, _pbrMatImages.heightMap.imageView, _defaultSamplerLinear,
+    //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //writer.update_set(_device, pbrMaterialSet);
+
+    //// Allocate and set up ibl descriptor set
+    //VkDescriptorSet iblSet = get_current_frame()._frameDescriptors.allocate(_device, _iblDescLayout);
+    //DescriptorWriter iblWriter;
+    //iblWriter.write_image(0, _irradianceCMap.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //iblWriter.write_image(1, _prefilterMap.imageView, _defaultSamplerLinearMip, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //iblWriter.write_image(2, _brdfLUT.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //iblWriter.update_set(_device, iblSet);
+
+    //// Bind both descriptor sets
+    //VkDescriptorSet descriptorSets[] = { pbrMaterialSet, iblSet };
+    //vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 2, descriptorSets, 0, nullptr);
+    //// ----- END PBR DESCRIPTOR SET ------
+
+    //
+    //// draw monkey
+    //glm::mat4 model = glm::mat4(1.0f);
+    //rotAngle += _deltaTime * glm::radians(60.0f);
+    ////model = glm::rotate(model, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+
+    //glm::mat4 view = mainCamera.getViewMatrix();
+    //// camera projection
+    //glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
+    //// invert the Y direction on projection matrix so that we are more similar
+    //// to opengl and gltf axis
+    //projection[1][1] *= -1;
+    //push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
+    //push_constants.worldMatrix = projection * view; // model matrix is implicit as identity
+    //push_constants.modelMatrix = model;
+    //push_constants.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
+    //bump_push_constants.heightScale = heightScale;
+    //bump_push_constants.numLayers = numLayers;
+    //bump_push_constants.bumpMode = bumpMode;
+    //vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+    //vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(GPUDrawPushConstants), sizeof(BumpPushConstants), &bump_push_constants);
+    //vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    //vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
+
+
+    //// Draw light spheres
+    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipeline);
+    //// Light positions same as hardcoded in frag shader
+    //// for pbr calculations on monkey
+    //glm::vec3 lightPositions[4] = {
+    //    glm::vec3(-3.0f, 3.0f, 3.0f),   
+    //    glm::vec3(3.0f, 3.0f, 3.0f),
+    //    glm::vec3(-3.0f, -3.0f, 3.0f),
+    //    glm::vec3(3.0f, -3.0f, 3.0f)
+    //};
+
+    //// draw sphere at each light position
+    //for (int i = 0; i < 1; i++)
+    //{
+    //    //bind a texture.
+    //    // allocate new descriptor set
+    //    VkDescriptorSet imageSet = get_current_frame()._frameDescriptors.allocate(_device, _singleImageDescriptorLayout);
+    //    {
+    //        // write single image descriptor on binding 0
+    //        DescriptorWriter writer;
+    //        writer.write_image(0, _errorCheckerboardImage.imageView, _defaultSamplerNearest, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //        writer.update_set(_device, imageSet);
+    //    }
+    //    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipelineLayout, 0, 1, &imageSet, 0, nullptr);
+
+
+
+    //    glm::mat4 model = glm::translate(glm::mat4(1.0f), lightPositions[i]);
+    //    model = glm::scale(model, glm::vec3(0.3f)); 
+
+    //    push_constants.worldMatrix = projection * view;
+    //    push_constants.modelMatrix = model; 
+    //    push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
+    //    push_constants.vertexBuffer = testMeshes[1]->meshBuffers.vertexBufferAddress; // sphere mesh at index 1. buffer memory contains multiple meshes
+
+    //    vkCmdPushConstants(cmd, _spherePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+    //    vkCmdBindIndexBuffer(cmd, testMeshes[1]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    //    vkCmdDrawIndexed(cmd, testMeshes[1]->surfaces[0].count, 1, testMeshes[1]->surfaces[0].startIndex, 0, 0);
+    //}
+
+    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
+
+    //// based on enviroment map mode, use different cube map
+    //VkImageView skybox;
+    //switch (enviromentMapMode)
+    //{
+    //    case 0:
+    //        skybox = _cubeMap.imageView;
+    //        break;
+    //    case 1:
+    //        skybox = _irradianceCMap.imageView;
+    //        break;
+    //    case 2:
+    //        skybox = _prefilterMap.imageView;
+    //        break;
+    //    default:
+    //        skybox = _cubeMap.imageView;
+    //        break;
+    //}
+
+    //// bind cubemap descriptor set
+    //VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
+    //{
+    //    DescriptorWriter writer;
+    //    writer.write_image(0, skybox, _defaultSamplerLinearMip,
+    //        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //    writer.update_set(_device, skyboxDset);
+    //}
+    //vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &skyboxDset, 0, nullptr);
+
+    //// push constants
+    //SkyboxPushConstants skyboxPush;
+    //glm::mat4 skyboxView = mainCamera.getViewMatrix();
+    //skyboxView = glm::mat4(glm::mat3(skyboxView)); // use only rotation, discard translation from camera
+    //glm::mat4 projectionM = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
+    //projectionM[1][1] *= -1;
+
+    //skyboxPush.viewProj = projectionM * skyboxView;
+    //skyboxPush.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress;  // Cube mesh
+
+    //vkCmdPushConstants(cmd, _skyboxPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(SkyboxPushConstants), &skyboxPush);
+    //vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    //vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
+
+    //vkCmdEndRendering(cmd);
 
 }
 
@@ -610,6 +637,29 @@ void VulkanEngine::updateDeltaTime()
     uint32_t currentTime = SDL_GetTicks64();
     _deltaTime = (currentTime - _lastTime) / 1000.0f; // Convert to seconds
     _lastTime = currentTime;
+}
+
+void VulkanEngine::update_scene()
+{
+    mainDrawContext.OpaqueSurfaces.clear();
+
+    loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+
+    sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
+    // camera projection
+    sceneData.proj = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.f, 0.1f);
+
+    // invert the Y direction on projection matrix so that we are more similar
+    // to opengl and gltf axis
+    sceneData.proj[1][1] *= -1;
+    sceneData.viewproj = sceneData.proj * sceneData.view;
+
+    //some default lighting parameters
+    sceneData.ambientColor = glm::vec4(.1f);
+    sceneData.sunlightColor = glm::vec4(1.f);
+    sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
+
+
 }
 
 void VulkanEngine::init_vulkan()
@@ -988,12 +1038,14 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 void VulkanEngine::init_descriptors()
 {
     // create a descriptor pool that will hold 10 sets with 1 image each
-    std::vector<DescriptorAllocator::PoolSizeRatio> sizes =
+    std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =  
     {
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1.0f},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1.0f},           
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4.0f}    
     };
 
-    globalDescriptorAllocator.init_pool(_device, 10, sizes);
+    globalDescriptorAllocator.init(_device, 10, sizes);
 
     // make the descriptor set layout for our compute draw
     // end of braces builder out of scope and destroyed
@@ -1059,7 +1111,7 @@ void VulkanEngine::init_descriptors()
 
     //make sure both the descriptor allocator and the new layout get cleaned up properly
     _mainDeletionQueue.push_function([&]() {
-        globalDescriptorAllocator.destroy_pool(_device);
+        globalDescriptorAllocator.destroy_pools(_device);
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _gpuSceneDataDescriptorLayout, nullptr); 
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
@@ -1094,12 +1146,13 @@ void VulkanEngine::init_pipelines()
 {
     // COMPUTE PIPELINES
     init_background_pipelines();
-    init_mesh_pipeline();
-    init_sphere_pipeline();
+    //init_mesh_pipeline();
+    //init_sphere_pipeline();
     init_skybox_pipeline();
     init_cubemap_compute_pipeline();
     init_compute_prefilter_pipeline();
     init_brdflut_pipeline();
+    metalRoughMaterial.build_pipelines(this);
 }
 
 void VulkanEngine::init_background_pipelines()
@@ -1709,6 +1762,56 @@ void VulkanEngine::init_default_data()
         destroy_image(_cubeMap);
         });
 
+    // ________CREATE DEFAULT MATERIAL INSTANCE_______
+    GLTFMetallic_Roughness::MaterialResources materialResources;
+    //default the material textures
+    materialResources.colorImage = _whiteImage;
+    materialResources.colorSampler = _defaultSamplerLinear;
+    materialResources.metalRoughImage = _whiteImage;
+    materialResources.metalRoughSampler = _defaultSamplerLinear;
+
+    //set the uniform buffer for the material data
+    // allocate buffer big enough for material constants
+    AllocatedBuffer materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    //write the buffer
+    // access material constants by casting to material constants type and getting a cpu side pointer
+    GLTFMetallic_Roughness::MaterialConstants* sceneUniformData = (GLTFMetallic_Roughness::MaterialConstants*)materialConstants.allocation->GetMappedData();
+    sceneUniformData->colorFactors = glm::vec4{ 1,1,1,1 };
+    sceneUniformData->metal_rough_factors = glm::vec4{ 1,0.5,0,0 };
+
+    _mainDeletionQueue.push_function([=, this]() {
+        destroy_buffer(materialConstants);
+        });
+
+    materialResources.dataBuffer = materialConstants.buffer;
+    materialResources.dataBufferOffset = 0;
+
+    defaultData = metalRoughMaterial.write_material(_device, MaterialPass::MainColor, materialResources, globalDescriptorAllocator);
+
+    for (auto& m : testMeshes) {
+        std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
+        newNode->mesh = m;
+
+        newNode->localTransform = glm::mat4{ 1.f };
+        newNode->worldTransform = glm::mat4{ 1.f };
+
+        for (auto& s : newNode->mesh->surfaces) {
+            s.material = std::make_shared<GLTFMaterial>(defaultData);
+        }
+
+        loadedNodes[m->name] = std::move(newNode);
+    }
+
+    //for (auto& m : testMeshes) {
+    //    fmt::println("Mesh: {}", m->name);
+    //    fmt::println("  Surfaces: {}", m->surfaces.size());
+    //    if (!m->surfaces.empty()) {
+    //        fmt::println("  First surface - startIndex: {}, count: {}",
+    //            m->surfaces[0].startIndex, m->surfaces[0].count);
+    //    }
+    //}
+
 }
 
 // creates blank image on gpu, other create image function writes into it
@@ -2304,4 +2407,121 @@ void VulkanEngine::destroy_image(const AllocatedImage& img)
         VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, _immFence));
 
         VK_CHECK(vkWaitForFences(_device, 1, &_immFence, true, 9999999999));
+    }
+
+    void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
+    {
+        VkShaderModule meshFragShader;
+        if (!vkutil::load_shader_module("../../shaders/mesh.frag.spv", engine->_device, &meshFragShader)) {
+            fmt::println("Error when building the triangle fragment shader module");
+        }
+
+        VkShaderModule meshVertexShader;
+        if (!vkutil::load_shader_module("../../shaders/mesh.vert.spv", engine->_device, &meshVertexShader)) {
+            fmt::println("Error when building the triangle vertex shader module");
+        }
+
+        VkPushConstantRange matrixRange{};
+        matrixRange.offset = 0;
+        matrixRange.size = sizeof(GPUDrawPushConstants);
+        matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        DescriptorLayoutBuilder layoutBuilder;
+        layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+        materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout,
+            materialLayout };
+
+        VkPipelineLayoutCreateInfo mesh_layout_info = vkinit::pipeline_layout_create_info();
+        mesh_layout_info.setLayoutCount = 2;
+        mesh_layout_info.pSetLayouts = layouts;
+        mesh_layout_info.pPushConstantRanges = &matrixRange;
+        mesh_layout_info.pushConstantRangeCount = 1;
+
+        VkPipelineLayout newLayout;
+        VK_CHECK(vkCreatePipelineLayout(engine->_device, &mesh_layout_info, nullptr, &newLayout));
+
+        opaquePipeline.layout = newLayout;
+        transparentPipeline.layout = newLayout;
+
+        // build the stage-create-info for both vertex and fragment stages. This lets
+        // the pipeline know the shader modules per stage
+        PipelineBuilder pipelineBuilder;
+        pipelineBuilder.set_shaders(meshVertexShader, meshFragShader);
+        pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+        pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+        pipelineBuilder.set_multisampling_none();
+        pipelineBuilder.disable_blending();
+        pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+        //pipelineBuilder.disable_depthtest();
+
+        //render format
+        pipelineBuilder.set_color_attachment_format(engine->_drawImage.imageFormat);
+        pipelineBuilder.set_depth_format(engine->_depthImage.imageFormat);
+
+        // use the triangle layout we created
+        pipelineBuilder._pipelineLayout = newLayout;
+
+        // finally build the pipeline
+        opaquePipeline.pipeline = pipelineBuilder.build_pipeline(engine->_device);
+
+        // create the transparent variant
+        pipelineBuilder.enable_blending_additive();
+
+        pipelineBuilder.enable_depthtest(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
+
+        transparentPipeline.pipeline = pipelineBuilder.build_pipeline(engine->_device);
+
+        vkDestroyShaderModule(engine->_device, meshFragShader, nullptr);
+        vkDestroyShaderModule(engine->_device, meshVertexShader, nullptr);
+    }
+
+    MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
+    {
+        MaterialInstance matData;
+        matData.passType = pass;
+        if (pass == MaterialPass::Transparent) {
+            matData.pipeline = &transparentPipeline;
+        }
+        else {
+            matData.pipeline = &opaquePipeline;
+        }
+
+        matData.materialSet = descriptorAllocator.allocate(device, materialLayout);
+
+
+        writer.clear();
+        writer.write_buffer(0, resources.dataBuffer, sizeof(MaterialConstants), resources.dataBufferOffset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.write_image(2, resources.metalRoughImage.imageView, resources.metalRoughSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+        writer.update_set(device, matData.materialSet);
+
+        return matData;
+    }
+
+    void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
+    {
+        glm::mat4 nodeMatrix = topMatrix * worldTransform; // this means if draw() mult times can render same obj mult times?
+
+        for (auto& s : mesh->surfaces) {
+            RenderObject def;
+            def.indexCount = s.count;
+            def.firstIndex = s.startIndex;
+            def.indexBuffer = mesh->meshBuffers.indexBuffer.buffer;
+            def.material = &s.material->data;
+
+            def.transform = nodeMatrix;
+            def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
+
+            ctx.OpaqueSurfaces.push_back(def);
+        }
+
+        // recurse down
+        Node::Draw(topMatrix, ctx);
     }
