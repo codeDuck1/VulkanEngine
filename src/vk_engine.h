@@ -33,7 +33,7 @@ struct GLTFMetallic_Roughness {
 	DescriptorWriter writer;
 
 	void build_pipelines(VulkanEngine* engine);
-	void clear_resources(VkDevice device);
+	void clear_resources(VkDevice device); // TODO!!!
 
 	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
 };
@@ -52,6 +52,7 @@ struct RenderObject {
 
 struct DrawContext {
 	std::vector<RenderObject> OpaqueSurfaces;
+	std::vector<RenderObject> TransparentSurfaces;
 };
 
 // responsible for displaying mesh
@@ -315,6 +316,8 @@ public:
 	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
 	void update_scene();
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	void destroy_buffer(const AllocatedBuffer& buffer);
+	void destroy_image(const AllocatedImage& img);
 
 private:
 	void init_vulkan();
@@ -328,7 +331,7 @@ private:
 	void resize_swapchain();
 
 	
-	void destroy_buffer(const AllocatedBuffer& buffer);
+
 	
 
 	void init_descriptors();
@@ -346,5 +349,5 @@ private:
 	void init_default_data();
 
 
-	void destroy_image(const AllocatedImage& img);
+
 };

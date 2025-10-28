@@ -76,10 +76,10 @@ void VulkanEngine::init()
     _deltaTime = 0.0f;        
 
     // try loading and stroing big scene
-    std::string structurePath = { "..\\..\\assets\\structure.glb" };
+    std::string structurePath = { "..\\..\\assets\\city.glb" };
     auto structureFile = loadGltf(this, structurePath);
     assert(structureFile.has_value());
-    loadedScenes["structure"] = *structureFile;
+    loadedScenes["castle"] = *structureFile;
 }
 
 /// <summary>
@@ -348,9 +348,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     VkRenderingInfo renderInfo = vkinit::rendering_info(_drawExtent, &colorAttachment, &depthAttachment);
     vkCmdBeginRendering(cmd, &renderInfo);
 
-    // use mesh pipeline!
-    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
-
     // set dynamic viewport and scissor since we didnt hard code when creating pipeline
     // dynamic pipeline state
     VkViewport viewport = {};
@@ -373,9 +370,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // render object represents one surface/primitve of a mesh
-    for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
-
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline); // in theory each surface could be using its own pipeline
+    auto draw = [&](const RenderObject& draw) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
 
@@ -384,16 +380,25 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         GPUDrawPushConstants pushConstants;
         pushConstants.vertexBuffer = draw.vertexBufferAddress;
         pushConstants.worldMatrix = draw.transform;
-
         vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
         vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
+        };
+
+    for (auto& r : mainDrawContext.OpaqueSurfaces) {
+        draw(r);
+    }
+
+    for (auto& r : mainDrawContext.TransparentSurfaces) {
+        draw(r);
     }
 
 
     vkCmdEndRendering(cmd);
 
 
+    // use mesh pipeline!
+    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
     //GPUDrawPushConstants push_constants;
     //BumpPushConstants bump_push_constants;
@@ -660,9 +665,13 @@ void VulkanEngine::update_scene()
     mainCamera.update(_deltaTime);
 
     mainDrawContext.OpaqueSurfaces.clear();
+    mainDrawContext.TransparentSurfaces.clear();
 
     //loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+
+    // flip matrix instead of identity to flip upside down models arounds
+    glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(1, 0, 0));
+    loadedScenes["castle"]->Draw(flipMatrix, mainDrawContext);
 
     glm::mat4 view = mainCamera.getViewMatrix();
     // camera projection

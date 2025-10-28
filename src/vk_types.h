@@ -137,6 +137,7 @@ struct GPUDrawPushConstants {
 	VkDeviceAddress vertexBuffer;
 };
 
+
 struct SkyboxPushConstants {
 	glm::mat4 viewProj;
 	VkDeviceAddress vertexBuffer;

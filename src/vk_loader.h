@@ -5,6 +5,10 @@
 #include <unordered_map>
 #include <filesystem>
 
+#include <fastgltf/glm_element_traits.hpp>
+#include <fastgltf/parser.hpp>
+#include <fastgltf/tools.hpp>
+
 //forward declaration
 class VulkanEngine;
 
@@ -66,6 +70,7 @@ struct LoadedGLTF : public IRenderable {
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngine* engine, std::filesystem::path filePath);
 std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::string_view filePath);
 
+std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& asset, fastgltf::Image& image);
 AllocatedImage load_image_from_file(VulkanEngine* engine, std::filesystem::path filePath, bool mipmapped);
 AllocatedImage load_cubemap_from_files(VulkanEngine* engine, std::string paths[6]);
 AllocatedImage load_cubemap_from_files_hdr(VulkanEngine* engine, std::string paths[6]);
