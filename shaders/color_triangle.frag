@@ -192,7 +192,7 @@ void main()
     //float metallic  = texture(metallicMap, preUVs).r;
     //float roughness = texture(roughnessMap, preUVs).r;
     //float ao        = texture(aoMap, preUVs).r;
-    float metallic  = 0.0;  // Default: non-metallic
+    float metallic  = 1.0;  // Default: non-metallic
     float roughness = 0.5;  // Default: medium roughness
     float ao        = 1.0;  // Default: no occlusion
 

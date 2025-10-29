@@ -91,6 +91,22 @@ struct Vertex {
 };
 #pragma pack(pop)
 
+#pragma pack(push, 1)
+struct VertexOG {
+
+	glm::vec3 position;
+	float uv_x;
+	glm::vec3 normal;
+	float uv_y;
+	glm::vec4 color;
+
+	// for normal mapping
+	// these simply create a little local xyz coord frame on each shape face 
+	glm::vec4 tangent;
+	glm::vec4 bitangent;    
+};
+#pragma pack(pop)
+
 // DATA FLOW:
 //init_default_data()
 //    ↓
@@ -134,6 +150,13 @@ struct GPUDrawPushConstants {
 	glm::mat4 worldMatrix;
 	//glm::mat4 modelMatrix;
 	//glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
+	VkDeviceAddress vertexBuffer;
+};
+
+struct GPUDrawPushConstantsOG {
+	glm::mat4 worldMatrix;
+	glm::mat4 modelMatrix;
+	glm::vec4 cameraPosition; // must be vec4 for glsl memory layout
 	VkDeviceAddress vertexBuffer;
 };
 

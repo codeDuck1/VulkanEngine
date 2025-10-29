@@ -11,7 +11,7 @@
 #include "vk_types.h"
 #include <glm/gtx/quaternion.hpp>
 
-//void calculateTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices); // forward declaration
+void calculateTangents(std::vector<VertexOG>& vertices, const std::vector<uint32_t>& indices); // forward declaration
 VkFilter extract_filter(fastgltf::Filter filter);
 VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter);
 
@@ -349,7 +349,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
     // use the same vectors for all meshes so that the memory doesnt reallocate as
     // often
     std::vector<uint32_t> indices;
-    std::vector<Vertex> vertices;
+    std::vector<VertexOG> vertices;
     for (fastgltf::Mesh& mesh : gltf.meshes) {
         MeshAsset newmesh;
 
@@ -384,15 +384,15 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
 
                 fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor,
                     [&](glm::vec3 v, size_t index) {
-                        Vertex newvtx;
+                        VertexOG newvtx;
                         newvtx.position = v;
                         newvtx.normal = { 1, 0, 0 };
                         newvtx.color = glm::vec4{ 1.f };
                         newvtx.uv_x = 0;
                         newvtx.uv_y = 0;
                         //newvtx.ok = 0.f;
-                        //newvtx.tangent = glm::vec4{ 0.f };
-                        //newvtx.bitangent = glm::vec4{ 0.f };
+                        newvtx.tangent = glm::vec4{ 0.f };
+                        newvtx.bitangent = glm::vec4{ 0.f };
                         //newvtx.ok2 = 0.f;
                         vertices[initial_vtx + index] = newvtx; // storing newly created vertexx into pos in vertices array
 
@@ -432,45 +432,45 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
 
 
              // Load tangents if present in GLTF
-            //auto tangents = p.findAttribute("TANGENT");
-            //if (tangents != p.attributes.end()) {
-            //    fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[(*tangents).second],
-            //        [&](glm::vec4 v, size_t index) {
-            //            vertices[initial_vtx + index].tangent = glm::vec4(v.x, v.y, v.z, 1.0f);
-            //            // GLTF stores handedness in w component
-            //            // Bitangent = cross(normal, tangent) * handedness
-            //            glm::vec3 n = vertices[initial_vtx + index].normal;
-            //            glm::vec3 t = glm::vec3(v.x, v.y, v.z);
-            //            vertices[initial_vtx + index].bitangent = glm::vec4(glm::cross(n, t) * v.w, 0.0f);
-            //        });
-            //}
+            auto tangents = p.findAttribute("TANGENT");
+            if (tangents != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[(*tangents).second],
+                    [&](glm::vec4 v, size_t index) {
+                        vertices[initial_vtx + index].tangent = glm::vec4(v.x, v.y, v.z, 1.0f);
+                        // GLTF stores handedness in w component
+                        // Bitangent = cross(normal, tangent) * handedness
+                        glm::vec3 n = vertices[initial_vtx + index].normal;
+                        glm::vec3 t = glm::vec3(v.x, v.y, v.z);
+                        vertices[initial_vtx + index].bitangent = glm::vec4(glm::cross(n, t) * v.w, 0.0f);
+                    });
+            }
             newmesh.surfaces.push_back(newSurface);
         }
   
 
         //// Check if any tangents were loaded from GLTF
-        //bool hasTangents = false;
-        //for (const auto& vtx : vertices) {
-        //    if (glm::length(vtx.tangent) > 0.001f) {
-        //        hasTangents = true;
-        //        break;
-        //    }
-        //}
-        // Only calculate tangents if not in the GLTF file
-        //if (!hasTangents) {
-        //    calculateTangents(vertices, indices);
-        //    fmt::print("Calculated tangents for mesh: {}\n", newmesh.name);
-        //}
-        //else {
-        //    //fmt::print("Using tangents from GLTF for mesh: {}\n", newmesh.name);
-        //}
+        bool hasTangents = false;
+        for (const auto& vtx : vertices) {
+            if (glm::length(vtx.tangent) > 0.001f) {
+                hasTangents = true;
+                break;
+            }
+        }
+         //Only calculate tangents if not in the GLTF file
+        if (!hasTangents) {
+            calculateTangents(vertices, indices);
+            fmt::print("Calculated tangents for mesh: {}\n", newmesh.name);
+        }
+        else {
+            fmt::print("Using tangents from GLTF for mesh: {}\n", newmesh.name);
+        }
 
         // display the vertex normals
         // constexpr means can figure our while compiling, not while running! (baked in value)
         // while const mean wont change, but variable might be detrermined at runtime
         constexpr bool OverrideColors = false;
         if (OverrideColors) {
-            for (Vertex& vtx : vertices) {
+            for (VertexOG& vtx : vertices) {
                 vtx.color = glm::vec4(vtx.normal, 1.f);
             }
         }
@@ -478,7 +478,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
        // fmt::print("Vertex size with manual padding: {}\n", sizeof(Vertex));
 
         // upload mesh data to gpu buffers
-        newmesh.meshBuffers = engine->uploadMesh(indices, vertices);
+        newmesh.meshBuffers = engine->uploadMeshOG(indices, vertices);
         // moves newmesh into MeshAsset. vec will contain ptr to MeshAsset objects and owns MeshAsset object
         meshes.emplace_back(std::make_shared<MeshAsset>(std::move(newmesh)));
     }
@@ -680,65 +680,65 @@ AllocatedImage load_cubemap_from_files_hdr(VulkanEngine* engine, std::string pat
 /// Helper function to calculate tangents and bitangents for each triangle, used for
 /// normal mapping (Generated by Claude).
 /// </summary>
-//void calculateTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
-//{
-//    std::vector<glm::vec3> tangents(vertices.size(), glm::vec3(0.0f));
-//    std::vector<glm::vec3> bitangents(vertices.size(), glm::vec3(0.0f));
-//    // Process each triangle
-//    for (size_t i = 0; i < indices.size(); i += 3) {
-//        uint32_t i0 = indices[i];
-//        uint32_t i1 = indices[i + 1];
-//        uint32_t i2 = indices[i + 2];
-//        Vertex& v0 = vertices[i0];
-//        Vertex& v1 = vertices[i1];
-//        Vertex& v2 = vertices[i2];
-//        // Calculate edges and delta UVs
-//        glm::vec3 edge1 = v1.position - v0.position;
-//        glm::vec3 edge2 = v2.position - v0.position;
-//        glm::vec2 deltaUV1 = glm::vec2(v1.uv_x - v0.uv_x, v1.uv_y - v0.uv_y);
-//        glm::vec2 deltaUV2 = glm::vec2(v2.uv_x - v0.uv_x, v2.uv_y - v0.uv_y);
-//        // Calculate tangent and bitangent for this triangle
-//        float det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
-//        if (std::abs(det) > 1e-6f) {
-//            float f = 1.0f / det;
-//            glm::vec3 tangent;
-//            tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
-//            tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
-//            tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
-//            glm::vec3 bitangent;
-//            bitangent.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
-//            bitangent.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
-//            bitangent.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
-//            // Accumulate tangents and bitangents for each vertex of this triangle
-//            // Shared vertices will accumulate contributions from multiple triangles
-//            tangents[i0] += tangent;
-//            tangents[i1] += tangent;
-//            tangents[i2] += tangent;
-//            bitangents[i0] += bitangent;
-//            bitangents[i1] += bitangent;
-//            bitangents[i2] += bitangent;
-//        }
-//    }
-//    // Important: Gram-Schmidt orthogonalization MUST happen AFTER normalizing the accumulated vectors
-//    // When vertices are shared between triangles, their tangents get averaged (accumulation + normalize).
-//    // This averaging causes T, B, N to no longer be perfectly perpendicular (non-orthogonal).
-//    // Gram-Schmidt re-orthogonalizes them to ensure they're at perfect 90° angles again.
-//    // Without this step TBN matrix will be slightly off and normal mapping will look incorrect.
-//    for (size_t i = 0; i < vertices.size(); ++i) {
-//        glm::vec3 n = vertices[i].normal;
-//        glm::vec3 t = tangents[i];
-//        glm::vec3 b = bitangents[i];
-//        // Gram-Schmidt to make tangent perpendicular to normal
-//        t = glm::normalize(t - n * glm::dot(n, t));
-//        // Gram-Schmidt to make bitangent perpendicular to both normal and tangent
-//        // This ensures all three vectors are orthogonal
-//        b = glm::normalize(b - n * glm::dot(n, b) - t * glm::dot(t, b));
-//
-//        // Store as vec4 with w = 0
-//        vertices[i].tangent = glm::vec4(t, 0.0f);
-//        vertices[i].bitangent = glm::vec4(b, 0.0f);
-//    }
-//}
+void calculateTangents(std::vector<VertexOG>& vertices, const std::vector<uint32_t>& indices)
+{
+    std::vector<glm::vec3> tangents(vertices.size(), glm::vec3(0.0f));
+    std::vector<glm::vec3> bitangents(vertices.size(), glm::vec3(0.0f));
+    // Process each triangle
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        uint32_t i0 = indices[i];
+        uint32_t i1 = indices[i + 1];
+        uint32_t i2 = indices[i + 2];
+        VertexOG& v0 = vertices[i0];
+        VertexOG& v1 = vertices[i1];
+        VertexOG& v2 = vertices[i2];
+        // Calculate edges and delta UVs
+        glm::vec3 edge1 = v1.position - v0.position;
+        glm::vec3 edge2 = v2.position - v0.position;
+        glm::vec2 deltaUV1 = glm::vec2(v1.uv_x - v0.uv_x, v1.uv_y - v0.uv_y);
+        glm::vec2 deltaUV2 = glm::vec2(v2.uv_x - v0.uv_x, v2.uv_y - v0.uv_y);
+        // Calculate tangent and bitangent for this triangle
+        float det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+        if (std::abs(det) > 1e-6f) {
+            float f = 1.0f / det;
+            glm::vec3 tangent;
+            tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+            tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+            tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+            glm::vec3 bitangent;
+            bitangent.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+            bitangent.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+            bitangent.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+            // Accumulate tangents and bitangents for each vertex of this triangle
+            // Shared vertices will accumulate contributions from multiple triangles
+            tangents[i0] += tangent;
+            tangents[i1] += tangent;
+            tangents[i2] += tangent;
+            bitangents[i0] += bitangent;
+            bitangents[i1] += bitangent;
+            bitangents[i2] += bitangent;
+        }
+    }
+    // Important: Gram-Schmidt orthogonalization MUST happen AFTER normalizing the accumulated vectors
+    // When vertices are shared between triangles, their tangents get averaged (accumulation + normalize).
+    // This averaging causes T, B, N to no longer be perfectly perpendicular (non-orthogonal).
+    // Gram-Schmidt re-orthogonalizes them to ensure they're at perfect 90° angles again.
+    // Without this step TBN matrix will be slightly off and normal mapping will look incorrect.
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        glm::vec3 n = vertices[i].normal;
+        glm::vec3 t = tangents[i];
+        glm::vec3 b = bitangents[i];
+        // Gram-Schmidt to make tangent perpendicular to normal
+        t = glm::normalize(t - n * glm::dot(n, t));
+        // Gram-Schmidt to make bitangent perpendicular to both normal and tangent
+        // This ensures all three vectors are orthogonal
+        b = glm::normalize(b - n * glm::dot(n, b) - t * glm::dot(t, b));
+
+        // Store as vec4 with w = 0
+        vertices[i].tangent = glm::vec4(t, 0.0f);
+        vertices[i].bitangent = glm::vec4(b, 0.0f);
+    }
+}
 
 
 // opengl gltf sampler converters

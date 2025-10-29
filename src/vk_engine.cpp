@@ -689,7 +689,7 @@ void VulkanEngine::update_scene()
     //some default lighting parameters
     _sceneData.ambientColor = glm::vec4(.1f);
     _sceneData.sunlightColor = glm::vec4(1.f);
-    _sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
+    _sceneData.sunlightDirection = glm::vec4(glm::normalize(glm::vec3(0.5, -1.0, 0.3)), 1.f);
 
 
 }
@@ -1067,6 +1067,64 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
     return newSurface;
 }
 
+
+GPUMeshBuffers VulkanEngine::uploadMeshOG(std::span<uint32_t> indices, std::span<VertexOG> vertices)
+{
+    const size_t vertexBufferSize = vertices.size() * sizeof(VertexOG);
+    const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
+
+    GPUMeshBuffers newSurface;
+
+    //create vertex buffer
+    newSurface.vertexBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+
+    //find the adress of the vertex buffer
+    VkBufferDeviceAddressInfo deviceAdressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = newSurface.vertexBuffer.buffer };
+    newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfo);
+
+    //create index buffer
+    newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+
+
+    // _____________ common patter witn vulkan, first write memory on temp staging buffer that is cpu writeable
+    // then execute copy into GPU buffers that cant be written on CPU_______________________________________
+    // staging buffer for both copies to index and vertex buffers
+    AllocatedBuffer staging = create_buffer(vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY); // transfer usage flag to copy
+
+    void* data = staging.allocation->GetMappedData();
+
+    // copy vertex buffer from span TO staging buffer
+    memcpy(data, vertices.data(), vertexBufferSize);
+    // copy index buffer from span TO staging buffer
+    memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+
+    // gpu command to perform copy from staging buffer into GPU buffers
+    // not very efficient, since waiting on gpu cmds to execute before continuing with cpu work.
+    // most ppl put on a background thread, sole jon to execute uploads
+    immediate_submit([&](VkCommandBuffer cmd) {
+        VkBufferCopy vertexCopy{ 0 };
+        vertexCopy.dstOffset = 0;
+        vertexCopy.srcOffset = 0;
+        vertexCopy.size = vertexBufferSize;
+
+        // COPYING STAGING BUFFER INTO VERTEX BUFFER ON GPU
+        vkCmdCopyBuffer(cmd, staging.buffer, newSurface.vertexBuffer.buffer, 1, &vertexCopy);
+
+        VkBufferCopy indexCopy{ 0 };
+        indexCopy.srcOffset = vertexBufferSize; // same offset as with memcpy!
+        indexCopy.size = indexBufferSize;
+
+        // COPYING STAGING BUFFER INTO INDEX BUFFER ON GPU
+        vkCmdCopyBuffer(cmd, staging.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
+        });
+
+    destroy_buffer(staging);
+
+    return newSurface;
+}
+
 void VulkanEngine::init_descriptors()
 {
     // create a descriptor pool that will hold 10 sets with 1 image each
@@ -1178,7 +1236,7 @@ void VulkanEngine::init_pipelines()
 {
     // COMPUTE PIPELINES
     init_background_pipelines();
-    //init_mesh_pipeline();
+    init_mesh_pipeline();
     //init_sphere_pipeline();
     init_skybox_pipeline();
     init_cubemap_compute_pipeline();
@@ -1294,10 +1352,10 @@ void VulkanEngine::init_mesh_pipeline()
 
     VkPushConstantRange bufferRanges[2];
     bufferRanges[0].offset = 0;
-    bufferRanges[0].size = sizeof(GPUDrawPushConstants); // new for mesh pipeline
+    bufferRanges[0].size = sizeof(GPUDrawPushConstantsOG); // new for mesh pipeline
     bufferRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-    bufferRanges[1].offset = sizeof(GPUDrawPushConstants);
+    bufferRanges[1].offset = sizeof(GPUDrawPushConstantsOG);
     bufferRanges[1].size = sizeof(BumpPushConstants);
     bufferRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -2511,6 +2569,21 @@ void VulkanEngine::destroy_image(const AllocatedImage& img)
 
         vkDestroyShaderModule(engine->_device, meshFragShader, nullptr);
         vkDestroyShaderModule(engine->_device, meshVertexShader, nullptr);
+
+        engine->_mainDeletionQueue.push_function([&]() { // by ref depends on original c++ vals still existing
+            clear_resources(engine->_device);
+            });
+    }
+
+    // clear all resourcs created by gltf metallic roughness pipeline creation
+    void GLTFMetallic_Roughness::clear_resources(VkDevice device)
+    {
+        vkDestroyDescriptorSetLayout(device, materialLayout, nullptr);
+
+        vkDestroyPipelineLayout(device, opaquePipeline.layout, nullptr); // both opaque and transparent share same layout
+        vkDestroyPipeline(device, opaquePipeline.pipeline, nullptr);
+        vkDestroyPipeline(device, transparentPipeline.pipeline, nullptr);
+            
     }
 
     MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator)
