@@ -76,7 +76,7 @@ void VulkanEngine::init()
     _deltaTime = 0.0f;        
 
     // try loading and stroing big scene
-    std::string structurePath = { "..\\..\\assets\\city.glb" };
+    std::string structurePath = { "..\\..\\assets\\fruit.glb" };
     auto structureFile = loadGltf(this, structurePath);
     assert(structureFile.has_value());
     loadedScenes["castle"] = *structureFile;
@@ -338,6 +338,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     DescriptorWriter writer;
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.update_set(_device, globalDescriptor); // now global descriptor rdy to be used for drawing
+
 
 
     
@@ -1127,13 +1128,17 @@ GPUMeshBuffers VulkanEngine::uploadMeshOG(std::span<uint32_t> indices, std::span
 
 void VulkanEngine::init_descriptors()
 {
-    // create a descriptor pool that will hold 10 sets with 1 image each
+    // create a descriptor pool that will hold 10 starting sets with the following
+    // resources: 
+    // - 1x UNIFORM_BUFFER (material constants)
+    // - 5x COMBINED_IMAGE_SAMPLER (baseColor, metallicRoughness, normal, occlusion, emissive)
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =  
     {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1.0f},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1.0f},           
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4.0f}    
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5.0f}    
     };
+    
 
     globalDescriptorAllocator.init(_device, 10, sizes);
 
@@ -1215,10 +1220,12 @@ void VulkanEngine::init_descriptors()
 
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
-        // create a descriptor pool
+        // create a descriptor pool for per frame allocation to allocate descriptor sets from
+        // POOL RATIOS MUST MATCH THE TYPES OF RESOURCES/descriptors IN THE DESCRIPTOR LAYOUTS ALLOCATING FROM THE POOL
+        // important: ratios are avg of how many of each resources are needed per d set, not every d set
+        // will use exact ratio. pool just makes sure have enough of each type across all sets
         std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
             { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 },
         };
@@ -1716,6 +1723,12 @@ void VulkanEngine::init_default_data()
     _blackImage = create_image((void*)&black, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
         VK_IMAGE_USAGE_SAMPLED_BIT);
 
+    // Create 1x1 flat normal map
+    // Normal pointing straight up in tangent space: (0, 0, 1) mapped to (128, 128, 255)
+    uint32_t flatNormal = 0xFFFF8080;  // RGBA: (128,128,255,255)
+    _defaultNormalImage = create_image((void*)&flatNormal, VkExtent3D{ 1, 1, 1 }, VK_FORMAT_R8G8B8A8_UNORM,
+        VK_IMAGE_USAGE_SAMPLED_BIT);
+
     //checkerboard image
     uint32_t magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
     std::array<uint32_t, 16 * 16 > pixels; //for 16x16 checkerboard texture
@@ -1839,7 +1852,9 @@ void VulkanEngine::init_default_data()
         destroy_image(_whiteImage);
         destroy_image(_greyImage);
         destroy_image(_blackImage);
+        destroy_image(_defaultNormalImage);
         destroy_image(_errorCheckerboardImage);
+        
 
         // Destroy PBR material images
         destroy_image(_pbrMatImages.albedoMap);
@@ -1859,6 +1874,12 @@ void VulkanEngine::init_default_data()
     materialResources.colorSampler = _defaultSamplerLinear;
     materialResources.metalRoughImage = _whiteImage;
     materialResources.metalRoughSampler = _defaultSamplerLinear;
+    materialResources.normalImage = _defaultNormalImage;
+    materialResources.normalSampler = _defaultSamplerLinear;
+    materialResources.occlusionImage = _whiteImage;
+    materialResources.occlusionSampler = _defaultSamplerLinear;
+    materialResources.emissiveImage = _blackImage;
+    materialResources.emissiveSampler = _defaultSamplerLinear;
 
     //set the uniform buffer for the material data
     // allocate buffer big enough for material constants
@@ -2517,9 +2538,12 @@ void VulkanEngine::destroy_image(const AllocatedImage& img)
         matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
         DescriptorLayoutBuilder layoutBuilder;
-        layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-        layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);           // Material constants
+        layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);   // Base color
+        layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);   // Metallic-roughness
+        layoutBuilder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);   // Normal map
+        layoutBuilder.add_binding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);   // Occlusion map
+        layoutBuilder.add_binding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);   // Emissive map
 
         materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
@@ -2604,6 +2628,10 @@ void VulkanEngine::destroy_image(const AllocatedImage& img)
         writer.write_buffer(0, resources.dataBuffer, sizeof(MaterialConstants), resources.dataBufferOffset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
         writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         writer.write_image(2, resources.metalRoughImage.imageView, resources.metalRoughSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+        writer.write_image(3, resources.normalImage.imageView, resources.normalSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.write_image(4, resources.occlusionImage.imageView, resources.occlusionSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.write_image(5, resources.emissiveImage.imageView, resources.emissiveSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
         writer.update_set(device, matData.materialSet);
 
