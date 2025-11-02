@@ -11,6 +11,7 @@
 #include "vk_types.h"
 #include <glm/gtx/quaternion.hpp>
 
+
 void calculateTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices); // forward declaration
 VkFilter extract_filter(fastgltf::Filter filter);
 VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter);
@@ -437,7 +438,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
 }
 
 
-
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngine* engine, std::filesystem::path filePath)
 {
     std::cout << "Loading GLTF: " << filePath << std::endl;
@@ -843,20 +843,47 @@ void calculateTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t
     // This averaging causes T, B, N to no longer be perfectly perpendicular (non-orthogonal).
     // Gram-Schmidt re-orthogonalizes them to ensure they're at perfect 90° angles again.
     // Without this step TBN matrix will be slightly off and normal mapping will look incorrect.
-    for (size_t i = 0; i < vertices.size(); ++i) {
-        glm::vec3 n = vertices[i].normal;
-        glm::vec3 t = tangents[i];
-        glm::vec3 b = bitangents[i];
-        // Gram-Schmidt to make tangent perpendicular to normal
-        t = glm::normalize(t - n * glm::dot(n, t));
-        // Gram-Schmidt to make bitangent perpendicular to both normal and tangent
-        // This ensures all three vectors are orthogonal
-        b = glm::normalize(b - n * glm::dot(n, b) - t * glm::dot(t, b));
 
-        // Store as vec4 with w = 0
-        vertices[i].tangent = glm::vec4(t, 0.0f);
-        vertices[i].bitangent = glm::vec4(b, 0.0f);
+
+for (size_t i = 0; i < vertices.size(); ++i) {
+    glm::vec3 n = glm::normalize(vertices[i].normal);
+    glm::vec3 t = tangents[i];
+    glm::vec3 b = bitangents[i];
+
+    // after adding complex lighting with scene loading, got NaN/bad vecs values
+    // some vertices of triangle had same or near same uv coords.
+    // this fix works because  prevent bad UVs from generating invalid tangent/bitangent vectors,
+    // by replacing with defaults and re-orthogonalize everything for a working TBN
+    auto isFiniteVec3 = [](const glm::vec3& v) {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    };
+
+    // Replace invalid or zero vectors with a default
+    if (!isFiniteVec3(t) || glm::length2(t) < 1e-10f)
+        t = glm::vec3(1, 0, 0);
+    if (!isFiniteVec3(b) || glm::length2(b) < 1e-10f)
+        b = glm::vec3(0, 1, 0);
+
+    // Orthogonalize tangent to normal
+    t = t - n * glm::dot(n, t);
+    if (glm::length2(t) < 1e-10f) {
+        // Choose a fallback tangent orthogonal to N
+        t = glm::abs(n.z) < 0.999f
+              ? glm::normalize(glm::cross(n, glm::vec3(0, 0, 1)))
+              : glm::normalize(glm::cross(n, glm::vec3(0, 1, 0)));
+    } else {
+        t = glm::normalize(t);
     }
+
+    // Compute orthogonal bitangent and handedness
+    glm::vec3 b_ortho = glm::normalize(glm::cross(n, t));
+    float handedness = (glm::dot(glm::cross(n, t), b) < 0.0f) ? -1.0f : 1.0f;
+
+    vertices[i].tangent   = glm::vec4(t, handedness);
+    vertices[i].bitangent = glm::vec4(b_ortho, 0.0f);
+}
+
+
 }
 
 

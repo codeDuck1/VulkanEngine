@@ -76,7 +76,7 @@ void VulkanEngine::init()
     _deltaTime = 0.0f;        
 
     // try loading and stroing big scene
-    std::string structurePath = { "..\\..\\assets\\halloween_castle.glb" };
+    std::string structurePath = { "..\\..\\assets\\helm.glb" };
     auto structureFile = loadGltf(this, structurePath);
 
     assert(structureFile.has_value());
@@ -84,7 +84,7 @@ void VulkanEngine::init()
 }
 
 /// <summary>
-/// objects have dependencies on each other, must delete in correct order (opposite way they were created)
+/// objects have dependencies on each other, must delete in correct order (opposite wwawaaaaaaaaaaaaaaay they were created)
 /// </summary>
 void VulkanEngine::cleanup()
 {
@@ -381,7 +381,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
         GPUDrawPushConstants pushConstants;
         pushConstants.vertexBuffer = draw.vertexBufferAddress;
-        pushConstants.worldMatrix = draw.transform;
+        pushConstants.modelMatrix = draw.transform;
         vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
 
         vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
@@ -396,7 +396,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     }
 
 
-    vkCmdEndRendering(cmd);
 
 
     // use mesh pipeline!
@@ -451,7 +450,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     //// to opengl and gltf axis
     //projection[1][1] *= -1;
     //push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
-    //push_constants.worldMatrix = projection * view; // model matrix is implicit as identity
+    //push_constants.viewProjMatrix = projection * view; // model matrix is implicit as identity
     //push_constants.modelMatrix = model;
     //push_constants.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress; // access this buffer memory on gpu via address
     //bump_push_constants.heightScale = heightScale;
@@ -463,45 +462,48 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     //vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
 
 
-    //// Draw light spheres
-    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipeline);
-    //// Light positions same as hardcoded in frag shader
-    //// for pbr calculations on monkey
-    //glm::vec3 lightPositions[4] = {
-    //    glm::vec3(-3.0f, 3.0f, 3.0f),   
-    //    glm::vec3(3.0f, 3.0f, 3.0f),
-    //    glm::vec3(-3.0f, -3.0f, 3.0f),
-    //    glm::vec3(3.0f, -3.0f, 3.0f)
-    //};
-
-    //// draw sphere at each light position
-    //for (int i = 0; i < 1; i++)
-    //{
-    //    //bind a texture.
-    //    // allocate new descriptor set
-    //    VkDescriptorSet imageSet = get_current_frame()._frameDescriptors.allocate(_device, _singleImageDescriptorLayout);
-    //    {
-    //        // write single image descriptor on binding 0
-    //        DescriptorWriter writer;
-    //        writer.write_image(0, _errorCheckerboardImage.imageView, _defaultSamplerNearest, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    //        writer.update_set(_device, imageSet);
-    //    }
-    //    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipelineLayout, 0, 1, &imageSet, 0, nullptr);
 
 
+    GPUDrawPushConstantsOG push_constants;
+    // Draw light spheres
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipeline);
+    // Light positions same as hardcoded in frag shader
+    // for pbr calculations on monkey
+    glm::vec3 lightPositions[4] = {
+        glm::vec3(-3.0f, 3.0f, 3.0f),   
+        glm::vec3(3.0f, 3.0f, 3.0f),
+        glm::vec3(-3.0f, -3.0f, 3.0f),
+        glm::vec3(3.0f, -3.0f, 3.0f)
+    };
 
-    //    glm::mat4 model = glm::translate(glm::mat4(1.0f), lightPositions[i]);
-    //    model = glm::scale(model, glm::vec3(0.3f)); 
+    // draw sphere at each light position
+    for (int i = 0; i < 4; i++)
+    {
+        //bind a texture.
+        // allocate new descriptor set
+        VkDescriptorSet imageSet = get_current_frame()._frameDescriptors.allocate(_device, _singleImageDescriptorLayout);
+        {
+            // write single image descriptor on binding 0
+            DescriptorWriter writer;
+            writer.write_image(0, _errorCheckerboardImage.imageView, _defaultSamplerNearest, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            writer.update_set(_device, imageSet);
+        }
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _spherePipelineLayout, 0, 1, &imageSet, 0, nullptr);
 
-    //    push_constants.worldMatrix = projection * view;
-    //    push_constants.modelMatrix = model; 
-    //    push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
-    //    push_constants.vertexBuffer = testMeshes[1]->meshBuffers.vertexBufferAddress; // sphere mesh at index 1. buffer memory contains multiple meshes
 
-    //    vkCmdPushConstants(cmd, _spherePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-    //    vkCmdBindIndexBuffer(cmd, testMeshes[1]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    //    vkCmdDrawIndexed(cmd, testMeshes[1]->surfaces[0].count, 1, testMeshes[1]->surfaces[0].startIndex, 0, 0);
-    //}
+
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), lightPositions[i]);
+        model = glm::scale(model, glm::vec3(0.3f)); 
+        push_constants.viewProjMatrix = _sceneData.viewproj; // must use viewproj as mesh is rendering with
+        push_constants.modelMatrix = model; 
+        push_constants.cameraPosition = glm::vec4(mainCamera.position, 1.0f);
+        push_constants.vertexBuffer = testMeshes[1]->meshBuffers.vertexBufferAddress; // sphere mesh at index 1. buffer memory contains multiple meshes
+
+        vkCmdPushConstants(cmd, _spherePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstantsOG), &push_constants);
+        vkCmdBindIndexBuffer(cmd, testMeshes[1]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, testMeshes[1]->surfaces[0].count, 1, testMeshes[1]->surfaces[0].startIndex, 0, 0);
+    }
+    vkCmdEndRendering(cmd);
 
     //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
 
@@ -673,7 +675,10 @@ void VulkanEngine::update_scene()
 
     // flip matrix instead of identity to flip upside down models arounds
     glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(1, 0, 0));
-    loadedScenes["castle"]->Draw(flipMatrix, mainDrawContext);
+    glm::mat4 centerTransform = glm::translate(glm::mat4(1.f), glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::mat4 modelMatrix = centerTransform * flipMatrix;
+
+    loadedScenes["castle"]->Draw(modelMatrix, mainDrawContext);
 
     glm::mat4 view = mainCamera.getViewMatrix();
     // camera projection
@@ -687,9 +692,9 @@ void VulkanEngine::update_scene()
     _sceneData.view = view;
     _sceneData.proj = projection;
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
+    _sceneData.cameraPos = glm::vec4(mainCamera.position, 1.0f);
 
     //some default lighting parameters
-    _sceneData.ambientColor = glm::vec4(.1f);
     _sceneData.sunlightColor = glm::vec4(1.f);
     _sceneData.sunlightDirection = glm::vec4(glm::normalize(glm::vec3(0.5, -1.0, 0.3)), 1.f);
 
@@ -1243,7 +1248,7 @@ void VulkanEngine::init_pipelines()
     // COMPUTE PIPELINES
     init_background_pipelines();
     init_mesh_pipeline();
-    //init_sphere_pipeline();
+    init_sphere_pipeline();
     init_skybox_pipeline();
     init_cubemap_compute_pipeline();
     init_compute_prefilter_pipeline();
@@ -1436,7 +1441,7 @@ void VulkanEngine::init_sphere_pipeline()
 
     VkPushConstantRange bufferRange{};
     bufferRange.offset = 0;
-    bufferRange.size = sizeof(GPUDrawPushConstants); // new for mesh pipeline
+    bufferRange.size = sizeof(GPUDrawPushConstantsOG); // new for mesh pipeline
     bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
@@ -1445,7 +1450,8 @@ void VulkanEngine::init_sphere_pipeline()
     // ADDED DESCRIPTOR SET SUPPORT FOR TEXTURE!
     pipeline_layout_info.pSetLayouts = &_singleImageDescriptorLayout;  // layout for texture
     pipeline_layout_info.setLayoutCount = 1; // num of descriptor sets
-    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_spherePipelineLayout));
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &
+        _spherePipelineLayout));
 
     PipelineBuilder pipelineBuilder;
     //use the triangle layout we created

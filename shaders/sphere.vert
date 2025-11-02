@@ -29,7 +29,7 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer{
 //push constants block
 layout( push_constant ) uniform constants
 {	
-	mat4 render_matrix;
+	mat4 viewProj;
 	mat4 model_matrix;
 	vec4 camera_pos;
 	VertexBuffer vertexBuffer; // handle to gpu memory, use Vertexbuffer declaration above to interpret it
@@ -42,7 +42,7 @@ void main()
 	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
 
 	//output data
-	gl_Position = PushConstants.render_matrix * PushConstants.model_matrix * vec4(v.position, 1.0f);
+	gl_Position = PushConstants.viewProj * PushConstants.model_matrix * vec4(v.position, 1.0f);
 	//outColor = v.color.xyz;
 	outUV = vec2(v.uv_x, v.uv_y);
 }
