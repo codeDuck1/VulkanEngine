@@ -11,7 +11,7 @@
 #include "vk_types.h"
 #include <glm/gtx/quaternion.hpp>
 
-void calculateTangents(std::vector<VertexOG>& vertices, const std::vector<uint32_t>& indices); // forward declaration
+void calculateTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices); // forward declaration
 VkFilter extract_filter(fastgltf::Filter filter);
 VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter);
 
@@ -135,9 +135,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
         // default optional textures as unused
         constants.textureFlags = glm::vec4(0.0f);
 
-        // write material parameters to buffer
-        sceneMaterialConstants[data_index] = constants;
-
         MaterialPass passType = MaterialPass::MainColor;
         if (mat.alphaMode == fastgltf::AlphaMode::Blend) {
             passType = MaterialPass::Transparent;
@@ -165,57 +162,96 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
 
         // Load base color texture
         if (mat.pbrData.baseColorTexture.has_value()) {
-            size_t img = gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value();
-            size_t sampler = gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex].samplerIndex.value();
+            size_t texIndex = mat.pbrData.baseColorTexture.value().textureIndex;
 
-            materialResources.colorImage = images[img];
-            materialResources.colorSampler = file.samplers[sampler];
+            if (gltf.textures[texIndex].imageIndex.has_value()) {
+                size_t img = gltf.textures[texIndex].imageIndex.value();
+                materialResources.colorImage = images[img];
+            }
+
+            // Check if sampler exists before accessing, otherwise keep default
+            if (gltf.textures[texIndex].samplerIndex.has_value()) {
+                size_t sampler = gltf.textures[texIndex].samplerIndex.value();
+                materialResources.colorSampler = file.samplers[sampler];
+            }
         }
 
         // Load metallic-roughness texture
         if (mat.pbrData.metallicRoughnessTexture.has_value()) {
-            size_t img = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value();
-            size_t sampler = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].samplerIndex.value();
+            size_t texIndex = mat.pbrData.metallicRoughnessTexture.value().textureIndex;
 
-            materialResources.metalRoughImage = images[img];
-            materialResources.metalRoughSampler = file.samplers[sampler];
+            if (gltf.textures[texIndex].imageIndex.has_value()) {
+                size_t img = gltf.textures[texIndex].imageIndex.value();
+                materialResources.metalRoughImage = images[img];
+            }
+
+            // Check if sampler exists before accessing, otherwise keep default
+            if (gltf.textures[texIndex].samplerIndex.has_value()) {
+                size_t sampler = gltf.textures[texIndex].samplerIndex.value();
+                materialResources.metalRoughSampler = file.samplers[sampler];
+            }
         }
 
         // Load normal texture
         if (mat.normalTexture.has_value()) {
-            size_t img = gltf.textures[mat.normalTexture.value().textureIndex].imageIndex.value();
-            size_t sampler = gltf.textures[mat.normalTexture.value().textureIndex].samplerIndex.value();
+            size_t texIndex = mat.normalTexture.value().textureIndex;
 
-            materialResources.normalImage = images[img];
-            materialResources.normalSampler = file.samplers[sampler];
+            if (gltf.textures[texIndex].imageIndex.has_value()) {
+                size_t img = gltf.textures[texIndex].imageIndex.value();
+                materialResources.normalImage = images[img];
+            }
+
+            // Check if sampler exists before accessing, otherwise keep default
+            if (gltf.textures[texIndex].samplerIndex.has_value()) {
+                size_t sampler = gltf.textures[texIndex].samplerIndex.value();
+                materialResources.normalSampler = file.samplers[sampler];
+            }
+
             constants.textureFlags.x = 1.0f; // Flag: has normal map
         }
 
         // Load occlusion texture
         if (mat.occlusionTexture.has_value()) {
-            size_t img = gltf.textures[mat.occlusionTexture.value().textureIndex].imageIndex.value();
-            size_t sampler = gltf.textures[mat.occlusionTexture.value().textureIndex].samplerIndex.value();
-            materialResources.occlusionImage = images[img];
-            materialResources.occlusionSampler = file.samplers[sampler];
+            size_t texIndex = mat.occlusionTexture.value().textureIndex;
+
+            if (gltf.textures[texIndex].imageIndex.has_value()) {
+                size_t img = gltf.textures[texIndex].imageIndex.value();
+                materialResources.occlusionImage = images[img];
+            }
+
+            // Check if sampler exists before accessing, otherwise keep default
+            if (gltf.textures[texIndex].samplerIndex.has_value()) {
+                size_t sampler = gltf.textures[texIndex].samplerIndex.value();
+                materialResources.occlusionSampler = file.samplers[sampler];
+            }
+
             constants.textureFlags.y = 1.0f; // Flag: has occlusion map
         }
 
         // Load emissive texture
         if (mat.emissiveTexture.has_value()) {
-            size_t img = gltf.textures[mat.emissiveTexture.value().textureIndex].imageIndex.value();
-            size_t sampler = gltf.textures[mat.emissiveTexture.value().textureIndex].samplerIndex.value();
+            size_t texIndex = mat.emissiveTexture.value().textureIndex;
 
-            materialResources.emissiveImage = images[img];
-            materialResources.emissiveSampler = file.samplers[sampler];
+            if (gltf.textures[texIndex].imageIndex.has_value()) {
+                size_t img = gltf.textures[texIndex].imageIndex.value();
+                materialResources.emissiveImage = images[img];
+            }
+
+            // Check if sampler exists before accessing, otherwise keep default
+            if (gltf.textures[texIndex].samplerIndex.has_value()) {
+                size_t sampler = gltf.textures[texIndex].samplerIndex.value();
+                materialResources.emissiveSampler = file.samplers[sampler];
+            }
+
             constants.textureFlags.z = 1.0f; // Flag: has emissive map
         }
 
-        fmt::println("Writing material '{}' to buffer with textureFlags: ({}, {}, {}, {})",
-            mat.name,
-            constants.textureFlags.x,
-            constants.textureFlags.y,
-            constants.textureFlags.z,
-            constants.textureFlags.w);
+        //fmt::println("Writing material '{}' to buffer with textureFlags: ({}, {}, {}, {})",
+        //    mat.name,
+        //    constants.textureFlags.x,
+        //    constants.textureFlags.y,
+        //    constants.textureFlags.z,
+        //    constants.textureFlags.w);
         // Update the material constants with texture flags
         sceneMaterialConstants[data_index] = constants;
 
@@ -299,6 +335,37 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
                     [&](glm::vec4 v, size_t index) {
                         vertices[initial_vtx + index].color = v;
                     });
+            }
+
+            // load tangents if present in GLTF
+            bool hasTangents = false;
+            auto tangents = p.findAttribute("TANGENT");
+            if (tangents != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[(*tangents).second],
+                    [&](glm::vec4 v, size_t index) {
+                        vertices[initial_vtx + index].tangent = v;
+                    });
+                hasTangents = true;
+            }
+
+            // Calculate tangents if not provided by GLTF
+            if (!hasTangents) {
+                // Create a temporary containers of this primitive's vertices for tangent calculation
+                std::vector<Vertex> primitiveVertices(vertices.begin() + initial_vtx, vertices.end());
+                std::vector<uint32_t> primitiveIndices(indices.begin() + newSurface.startIndex, indices.end());
+
+                // Adjust indices to be relative to primitiveVertices, its own local array
+                for (auto& idx : primitiveIndices) {
+                    idx -= initial_vtx;
+                }
+
+                calculateTangents(primitiveVertices, primitiveIndices);
+
+                // Copy calculated tangents back to main vertices array
+                for (size_t i = 0; i < primitiveVertices.size(); ++i) {
+                    vertices[initial_vtx + i].tangent = primitiveVertices[i].tangent;
+                    vertices[initial_vtx + i].bitangent = primitiveVertices[i].bitangent;
+                }
             }
 
             if (p.materialIndex.has_value()) {
@@ -401,7 +468,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
     // use the same vectors for all meshes so that the memory doesnt reallocate as
     // often
     std::vector<uint32_t> indices;
-    std::vector<VertexOG> vertices;
+    std::vector<Vertex> vertices;
     for (fastgltf::Mesh& mesh : gltf.meshes) {
         MeshAsset newmesh;
 
@@ -436,7 +503,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
 
                 fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor,
                     [&](glm::vec3 v, size_t index) {
-                        VertexOG newvtx;
+                        Vertex newvtx;
                         newvtx.position = v;
                         newvtx.normal = { 1, 0, 0 };
                         newvtx.color = glm::vec4{ 1.f };
@@ -522,7 +589,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
         // while const mean wont change, but variable might be detrermined at runtime
         constexpr bool OverrideColors = false;
         if (OverrideColors) {
-            for (VertexOG& vtx : vertices) {
+            for (Vertex& vtx : vertices) {
                 vtx.color = glm::vec4(vtx.normal, 1.f);
             }
         }
@@ -732,7 +799,7 @@ AllocatedImage load_cubemap_from_files_hdr(VulkanEngine* engine, std::string pat
 /// Helper function to calculate tangents and bitangents for each triangle, used for
 /// normal mapping (Generated by Claude).
 /// </summary>
-void calculateTangents(std::vector<VertexOG>& vertices, const std::vector<uint32_t>& indices)
+void calculateTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
 {
     std::vector<glm::vec3> tangents(vertices.size(), glm::vec3(0.0f));
     std::vector<glm::vec3> bitangents(vertices.size(), glm::vec3(0.0f));
@@ -741,9 +808,9 @@ void calculateTangents(std::vector<VertexOG>& vertices, const std::vector<uint32
         uint32_t i0 = indices[i];
         uint32_t i1 = indices[i + 1];
         uint32_t i2 = indices[i + 2];
-        VertexOG& v0 = vertices[i0];
-        VertexOG& v1 = vertices[i1];
-        VertexOG& v2 = vertices[i2];
+        Vertex& v0 = vertices[i0];
+        Vertex& v1 = vertices[i1];
+        Vertex& v2 = vertices[i2];
         // Calculate edges and delta UVs
         glm::vec3 edge1 = v1.position - v0.position;
         glm::vec3 edge2 = v2.position - v0.position;

@@ -27,7 +27,7 @@ void main()
     // Use vertex normal for now (normal mapping requires tangent space)
     vec3 normal = normalize(inNormal);
     
-    // Simple lighting calculation
+    // Simple doffise lighting calculation
     float lightValue = max(dot(normal, sceneData.sunlightDirection.xyz), 0.1);
     
     // Apply AO to BOTH ambient and direct lighting for maximum visibility

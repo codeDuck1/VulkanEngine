@@ -302,7 +302,7 @@ public:
 
 	void draw_geometry(VkCommandBuffer cmd);
 	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
-	GPUMeshBuffers uploadMeshOG(std::span<uint32_t> indices, std::span<VertexOG> vertices);
+	GPUMeshBuffers uploadMeshOG(std::span<uint32_t> indices, std::span<Vertex> vertices);
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 

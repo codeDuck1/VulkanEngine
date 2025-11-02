@@ -86,8 +86,8 @@ struct Vertex {
 
 	// for normal mapping
 	// these simply create a little local xyz coord frame on each shape face 
-	//glm::vec4 tangent;
-	//glm::vec4 bitangent;    
+	glm::vec4 tangent;
+	glm::vec4 bitangent;    
 };
 #pragma pack(pop)
 

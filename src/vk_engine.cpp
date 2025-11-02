@@ -76,8 +76,9 @@ void VulkanEngine::init()
     _deltaTime = 0.0f;        
 
     // try loading and stroing big scene
-    std::string structurePath = { "..\\..\\assets\\fruit.glb" };
+    std::string structurePath = { "..\\..\\assets\\halloween_castle.glb" };
     auto structureFile = loadGltf(this, structurePath);
+
     assert(structureFile.has_value());
     loadedScenes["castle"] = *structureFile;
 }
@@ -1069,9 +1070,9 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 }
 
 
-GPUMeshBuffers VulkanEngine::uploadMeshOG(std::span<uint32_t> indices, std::span<VertexOG> vertices)
+GPUMeshBuffers VulkanEngine::uploadMeshOG(std::span<uint32_t> indices, std::span<Vertex> vertices)
 {
-    const size_t vertexBufferSize = vertices.size() * sizeof(VertexOG);
+    const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
     const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
 
     GPUMeshBuffers newSurface;
@@ -1128,10 +1129,9 @@ GPUMeshBuffers VulkanEngine::uploadMeshOG(std::span<uint32_t> indices, std::span
 
 void VulkanEngine::init_descriptors()
 {
-    // create a descriptor pool that will hold 10 starting sets with the following
-    // resources: 
-    // - 1x UNIFORM_BUFFER (material constants)
-    // - 5x COMBINED_IMAGE_SAMPLER (baseColor, metallicRoughness, normal, occlusion, emissive)
+    // create a descriptor pool that will hold 10 starting sets. 
+    // being used for default material descriptor set (kinda useless) and for compute shader target
+    // USED FOR DATA THAT NEVER CHANGES
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =  
     {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1.0f},
@@ -1150,8 +1150,7 @@ void VulkanEngine::init_descriptors()
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         _drawImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
     }
-
-    //allocate a descriptor set for our draw image
+    //allocate a descriptor set for our compute draw image
     _drawImageDescriptors = globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);
 
     // handles updating descriptor sets with images and buffer writes
@@ -1227,7 +1226,7 @@ void VulkanEngine::init_descriptors()
         std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 },
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 },
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5},
         };
 
         _frames[i]._frameDescriptors = DescriptorAllocatorGrowable{};
