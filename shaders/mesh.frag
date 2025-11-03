@@ -66,6 +66,12 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}  
+
+
 
 void main() 
 {
@@ -139,9 +145,31 @@ void main()
 
 
     }
-    
-    // Ambient lighting (simple approximation)
-    vec3 ambient = vec3(0.03) * albedo * ao;
+
+
+    // Use irradiance map for indirect diffuse and prefiltered env+brdf lut for indirect specular
+    vec3 worldNormal = normalize(inTBN * N);
+    vec3 worldViewDir = normalize(inTBN * V);
+
+    vec3 R = reflect(-worldViewDir, worldNormal);
+
+    // fresnel for ambient
+    vec3 F = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
+    vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+    kD *= 1.0 - metallic;
+
+    vec3 irradiance = texture(irradianceMap, worldNormal).rgb;
+    vec3 diffuse = irradiance * albedo;
+
+
+    const float MAX_REFLECTION_LOD = 4.0;
+    vec3 prefilteredColor = textureLod(prefilteredMap, R,  roughness * MAX_REFLECTION_LOD).rgb;   
+    vec2 envBRDF = texture(brdfIntegrMap, vec2(max(dot(N, V), 0.0), roughness)).rg;
+    vec3 specular = prefilteredColor * (F * envBRDF.x + envBRDF.y);
+
+    vec3 ambient = (kD * diffuse + specular) * ao;
+
     
     // Add emissive if available
     vec3 emissive = vec3(0.0);

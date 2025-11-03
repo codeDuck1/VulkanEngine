@@ -27,7 +27,7 @@ glm::mat4 Camera::getRotationMatrix()
     // the final rotation matrix
 
     glm::quat pitchRotation = glm::angleAxis(pitch, glm::vec3{ 1.f, 0.f, 0.f });
-    glm::quat yawRotation = glm::angleAxis(yaw, glm::vec3{ 0.f, -1.f, 0.f });
+    glm::quat yawRotation = glm::angleAxis(yaw, glm::vec3{ 0.f, 1.f, 0.f });
 
     return glm::toMat4(yawRotation) * glm::toMat4(pitchRotation);
 }

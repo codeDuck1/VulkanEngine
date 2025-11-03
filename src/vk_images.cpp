@@ -237,4 +237,28 @@ void vkutil::generate_cubemap_mipmaps(VkCommandBuffer cmd, VkImage image, VkExte
 
 }
 
+void vkutil::transition_image_mip(VkCommandBuffer cmd, VkImage image, uint32_t mipLevel,
+	VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+	VkImageMemoryBarrier2 imageBarrier{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+	imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+	imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	imageBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+	imageBarrier.oldLayout = oldLayout;
+	imageBarrier.newLayout = newLayout;
+	imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageBarrier.subresourceRange.baseMipLevel = mipLevel;
+	imageBarrier.subresourceRange.levelCount = 1;
+	imageBarrier.subresourceRange.baseArrayLayer = 0;
+	imageBarrier.subresourceRange.layerCount = 6;  // ALL 6 FACES for cubemap
+	imageBarrier.image = image;
+
+	VkDependencyInfo depInfo{ .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+	depInfo.imageMemoryBarrierCount = 1;
+	depInfo.pImageMemoryBarriers = &imageBarrier;
+
+	vkCmdPipelineBarrier2(cmd, &depInfo);
+}
+
 

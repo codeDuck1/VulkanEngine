@@ -10,6 +10,10 @@ namespace vkutil {
 	
 	void generate_mipmaps(VkCommandBuffer cmd, VkImage image, VkExtent2D imageSize);
 
+
+	// used for loaded cubemap, not generated ones
 	void generate_cubemap_mipmaps(VkCommandBuffer cmd, VkImage image, VkExtent2D imageSize);
+
+	void transition_image_mip(VkCommandBuffer cmd, VkImage image, uint32_t mipLevel, VkImageLayout oldLayout, VkImageLayout newLayout);
 
 };

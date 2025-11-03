@@ -136,6 +136,8 @@ void main()
             // Sample from a lower mip level like in irradiance shader
             // bc dont need high res img that causes artifacts
             vec3 Li = textureLod(environmentMap, L, mipLevel).rgb; // uses trilinear filtering
+
+            //vec3 Li = textureLod(environmentMap, L, 0).rgb;
             
             // Clamp extreme HDR values to prevent artifacts
             Li = min(Li, vec3(400.0));

@@ -70,7 +70,7 @@ void VulkanEngine::init()
     // camera init vals
     mainCamera.velocity = glm::vec3(0.f);
     mainCamera.position = glm::vec3(0, 0, 5);
-    mainCamera.pitch = 0;
+    mainCamera.pitch = glm::radians(180.f);
     mainCamera.yaw = 0;
     _lastTime = SDL_GetTicks64();  
     _deltaTime = 0.0f;        
@@ -340,6 +340,14 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.update_set(_device, globalDescriptor); // now global descriptor rdy to be used for drawing
 
+    // write for ibl descriptor set
+    VkDescriptorSet iblSet = get_current_frame()._frameDescriptors.allocate(_device, _iblDescLayout);
+    DescriptorWriter iblWriter;
+    iblWriter.write_image(0, _irradianceCMap.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    iblWriter.write_image(1, _prefilterMap.imageView, _defaultSamplerLinearMip, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    iblWriter.write_image(2, _brdfLUT.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    iblWriter.update_set(_device, iblSet);
+
 
 
     
@@ -376,6 +384,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1, &draw.material->materialSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 2, 1, &iblSet, 0, nullptr);  
 
         vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
@@ -503,53 +512,51 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         vkCmdBindIndexBuffer(cmd, testMeshes[1]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, testMeshes[1]->surfaces[0].count, 1, testMeshes[1]->surfaces[0].startIndex, 0, 0);
     }
-    vkCmdEndRendering(cmd);
 
-    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
+    // based on enviroment map mode, use different cube map
+    VkImageView skybox;
+    switch (enviromentMapMode)
+    {
+        case 0:
+            skybox = _cubeMap.imageView;
+            break;
+        case 1:
+            skybox = _irradianceCMap.imageView;
+            break;
+        case 2:
+            skybox = _prefilterMap.imageView;
+            break;
+        default:
+            skybox = _cubeMap.imageView;
+            break;
+    }
 
-    //// based on enviroment map mode, use different cube map
-    //VkImageView skybox;
-    //switch (enviromentMapMode)
-    //{
-    //    case 0:
-    //        skybox = _cubeMap.imageView;
-    //        break;
-    //    case 1:
-    //        skybox = _irradianceCMap.imageView;
-    //        break;
-    //    case 2:
-    //        skybox = _prefilterMap.imageView;
-    //        break;
-    //    default:
-    //        skybox = _cubeMap.imageView;
-    //        break;
-    //}
+    // bind cubemap descriptor set
+    VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
+    {
+        DescriptorWriter writer;
+        writer.write_image(0, skybox, _defaultSamplerLinearMip,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.update_set(_device, skyboxDset);
+    }
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &skyboxDset, 0, nullptr);
 
-    //// bind cubemap descriptor set
-    //VkDescriptorSet skyboxDset = get_current_frame()._frameDescriptors.allocate(_device, _cubeMapDescriptorLayout);
-    //{
-    //    DescriptorWriter writer;
-    //    writer.write_image(0, skybox, _defaultSamplerLinearMip,
-    //        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    //    writer.update_set(_device, skyboxDset);
-    //}
-    //vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &skyboxDset, 0, nullptr);
-
-    //// push constants
-    //SkyboxPushConstants skyboxPush;
-    //glm::mat4 skyboxView = mainCamera.getViewMatrix();
-    //skyboxView = glm::mat4(glm::mat3(skyboxView)); // use only rotation, discard translation from camera
-    //glm::mat4 projectionM = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
+    // push constants
+    SkyboxPushConstants skyboxPush;
+    glm::mat4 skyboxView = _sceneData.view;
+    skyboxView = glm::mat4(glm::mat3(skyboxView)); // use only rotation, discard translation from camera
+    glm::mat4 projectionM = _sceneData.proj;
     //projectionM[1][1] *= -1;
 
-    //skyboxPush.viewProj = projectionM * skyboxView;
-    //skyboxPush.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress;  // Cube mesh
+    skyboxPush.viewProj = projectionM * skyboxView;
+    skyboxPush.vertexBuffer = testMeshes[5]->meshBuffers.vertexBufferAddress;  // Cube mesh
 
-    //vkCmdPushConstants(cmd, _skyboxPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(SkyboxPushConstants), &skyboxPush);
-    //vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    //vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
+    vkCmdPushConstants(cmd, _skyboxPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(SkyboxPushConstants), &skyboxPush);
+    vkCmdBindIndexBuffer(cmd, testMeshes[5]->meshBuffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, testMeshes[5]->surfaces[0].count, 1, testMeshes[5]->surfaces[0].startIndex, 0, 0);
 
-    //vkCmdEndRendering(cmd);
+    vkCmdEndRendering(cmd);
 
 }
 
@@ -673,10 +680,10 @@ void VulkanEngine::update_scene()
 
     //loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
 
-    // flip matrix instead of identity to flip upside down models arounds
-    glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(1, 0, 0));
+
+
     glm::mat4 centerTransform = glm::translate(glm::mat4(1.f), glm::vec3(0.0f, 0.0f, 1.0f));
-    glm::mat4 modelMatrix = centerTransform * flipMatrix;
+    glm::mat4 modelMatrix = centerTransform;
 
     loadedScenes["castle"]->Draw(modelMatrix, mainDrawContext);
 
@@ -2163,7 +2170,7 @@ AllocatedImage VulkanEngine::create_cubemap_hdr(void* data[6], VkExtent3D size, 
     return newImage;
 }
 
-AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat format, bool mipmapped)
+AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat format, uint32_t mipLevels)
 {
     AllocatedImage newImage;
     newImage.imageFormat = format;
@@ -2184,11 +2191,8 @@ AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat
     // IMAGE CAN BE VIEWED BOTH AS CUBEMAP AND AS A 2D ARRAY!
     img_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
-    // Calculate mip levels if needed
-    if (mipmapped) {
-        uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
-        img_info.mipLevels = std::min(16u, mipLevels); // Cap at R32G32B32A32_SFLOAT limit
-    }
+    // Use provided mip levels (or 1 if 0 is passed)
+    img_info.mipLevels = (mipLevels > 0) ? mipLevels : 1;
 
     // Allocate on GPU
     VmaAllocationCreateInfo allocinfo = {};
@@ -2207,11 +2211,11 @@ AllocatedImage VulkanEngine::create_read_write_cubemap(VkExtent3D size, VkFormat
     return newImage;
 }
 
-// In vk_engine.cpp, add this function
+// for irradiance map convolution, sampling from a lower base enviornment map level to reduce artifacts
 void VulkanEngine::generate_irradiance_map()
 {
     VkExtent3D size = { 32 , 32, 1 };
-    _irradianceCMap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+    _irradianceCMap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, 0); // doesnt need any mip levels
 
     // Create a single 2D array view instead of 6 separate 2D views
     VkImageViewCreateInfo arrayViewInfo = vkinit::imageview_create_info(
@@ -2283,23 +2287,25 @@ void VulkanEngine::generate_irradiance_map()
 
 void VulkanEngine::generate_prefilter_map()
 {
-    VkExtent3D size = { 256, 256, 1 };
+    VkExtent3D size = { 512, 512, 1 };
     uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
     mipLevels = std::min(5u, mipLevels);
-    _prefilterMap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+    _prefilterMap = create_read_write_cubemap(size, VK_FORMAT_R16G16B16A16_SFLOAT, mipLevels);
+
     AllocatedBuffer uniformBuffer = create_buffer(sizeof(PrefilterProperties),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         VMA_MEMORY_USAGE_CPU_TO_GPU);
 
     std::vector<VkImageView> mipViews; // Collect views to destroy later
 
-    immediate_submit([&](VkCommandBuffer cmd) {
-        // Transition entire image (all mip levels) to GENERAL layout
-        vkutil::transition_image(cmd, _prefilterMap.image,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_GENERAL);
+    // Generate each mip level in a separate immediate_submit to ensure proper synchronization
+    for (uint32_t mip = 0; mip < mipLevels; mip++) {
+        immediate_submit([&](VkCommandBuffer cmd) {
+            // Transition this specific mip level to GENERAL layout for writing
+            vkutil::transition_image_mip(cmd, _prefilterMap.image, mip,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_GENERAL);
 
-        for (uint32_t mip = 0; mip < mipLevels; mip++) {
             uint32_t mipWidth = static_cast<uint32_t>(size.width * std::pow(0.5, mip));
             uint32_t mipHeight = static_cast<uint32_t>(size.height * std::pow(0.5, mip));
             float roughness = (float)mip / (float)(mipLevels - 1);
@@ -2314,9 +2320,10 @@ void VulkanEngine::generate_prefilter_map()
             mipViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
             mipViewInfo.subresourceRange.baseArrayLayer = 0;
             mipViewInfo.subresourceRange.layerCount = 6;
-            mipViewInfo.subresourceRange.baseMipLevel = mip;
+            mipViewInfo.subresourceRange.baseMipLevel = mip;// target for writing
             mipViewInfo.subresourceRange.levelCount = 1;
 
+            // wrapper for accessing actual prefilter map image
             VkImageView mipView;
             VK_CHECK(vkCreateImageView(_device, &mipViewInfo, nullptr, &mipView));
             mipViews.push_back(mipView); // Store for later cleanup
@@ -2325,6 +2332,9 @@ void VulkanEngine::generate_prefilter_map()
             uniformData->roughness = roughness;
             uniformData->mipLevel = mip;
 
+
+            // bind pipeline with the prefiltered compute shader
+            // and descriptor data we determined above
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _prefilterPipeline);
 
             VkDescriptorSet descSet = get_current_frame()._frameDescriptors.allocate(_device, _prefilterDescLayout);
@@ -2334,7 +2344,7 @@ void VulkanEngine::generate_prefilter_map()
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             writer.write_buffer(1, uniformBuffer.buffer, sizeof(PrefilterProperties), 0,
                 VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-            writer.write_image(2, mipView, VK_NULL_HANDLE,
+            writer.write_image(2, mipView, VK_NULL_HANDLE, // mip image we gonna write to
                 VK_IMAGE_LAYOUT_GENERAL,
                 VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
             writer.update_set(_device, descSet);
@@ -2343,19 +2353,18 @@ void VulkanEngine::generate_prefilter_map()
                 _prefilterPipelineLayout, 0, 1, &descSet, 0, nullptr);
 
             vkCmdDispatch(cmd, (mipWidth + 15) / 16, (mipHeight + 15) / 16, 6);
-        }
 
-        // Transition entire image (all mip levels) to SHADER_READ_ONLY layout
-        vkutil::transition_image(cmd, _prefilterMap.image,
-            VK_IMAGE_LAYOUT_GENERAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        }); // immediate_submit ends - GPU work is now complete
+            // Transition this specific mip level to SHADER_READ_ONLY layout for sampling
+            vkutil::transition_image_mip(cmd, _prefilterMap.image, mip,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }); // Each mip generation completes before next one starts
+    }
 
     // Now safe to destroy all mip views
     for (VkImageView view : mipViews) {
         vkDestroyImageView(_device, view, nullptr);
     }
-
     destroy_buffer(uniformBuffer);
     fmt::print("Prefilter map generated successfully with {} mip levels\n", mipLevels);
 
@@ -2552,11 +2561,15 @@ void VulkanEngine::destroy_image(const AllocatedImage& img)
 
         materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
-        VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout,
-            materialLayout };
+        VkDescriptorSetLayout layouts[] =
+        {
+            engine->_gpuSceneDataDescriptorLayout,
+            materialLayout,
+            engine->_iblDescLayout
+        };
 
         VkPipelineLayoutCreateInfo mesh_layout_info = vkinit::pipeline_layout_create_info();
-        mesh_layout_info.setLayoutCount = 2;
+        mesh_layout_info.setLayoutCount = 3;
         mesh_layout_info.pSetLayouts = layouts;
         mesh_layout_info.pPushConstantRanges = &matrixRange;
         mesh_layout_info.pushConstantRangeCount = 1;
@@ -2629,6 +2642,7 @@ void VulkanEngine::destroy_image(const AllocatedImage& img)
         matData.materialSet = descriptorAllocator.allocate(device, materialLayout);
 
 
+        // write for all material data
         writer.clear();
         writer.write_buffer(0, resources.dataBuffer, sizeof(MaterialConstants), resources.dataBufferOffset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
         writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);

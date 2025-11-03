@@ -315,7 +315,7 @@ public:
 	void generate_brdf_lut();
 
 	// used for convoluting base cubemap
-	AllocatedImage create_read_write_cubemap(VkExtent3D size, VkFormat format, bool mipmapped);
+	AllocatedImage create_read_write_cubemap(VkExtent3D size, VkFormat format, uint32_t mipLevels);
 
 	//run main loop
 	void run();

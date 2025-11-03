@@ -67,7 +67,7 @@ void main() {
 
             // for when mipmaps setup
             // INTERESTINGLY: this helps with artifacting around bright fireplace that could not fix
-            vec3 Li = textureLod(environmentMap, sampleVec, 4.0).rgb;
+            vec3 Li = textureLod(environmentMap, sampleVec, 3.0).rgb;
 
             // Clamp extreme HDR values from fireplace
             // this also helped with artifact. my first solution
@@ -84,3 +84,5 @@ void main() {
     
     imageStore(irradianceMap, ivec3(texCoord, pc.face), vec4(irradiance, 1.0));
 }
+
+// irradiance map

@@ -17,7 +17,7 @@ layout(set =0, binding = 0) uniform sampler2D displayTexture;
 void main() 
 {
 
-    //outFragColor = vec4(1.0, 1.0, 1.0, 1.0);
-	outFragColor = texture(displayTexture, inUV);
+    outFragColor = vec4(1.0, 1.0, 1.0, 1.0);
+	//outFragColor = texture(displayTexture, inUV);
 	
 }
